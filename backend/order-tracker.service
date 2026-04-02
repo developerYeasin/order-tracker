@@ -1,0 +1,16 @@
+[Unit]
+Description=Order Tracker Backend Service
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/order-tracker/backend
+EnvironmentFile=/root/order-tracker/backend/.env
+ExecStart=/root/order-tracker/backend/venv/bin/python -m app
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

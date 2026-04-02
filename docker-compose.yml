@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: order-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DB:-order_tracker}
+      MYSQL_USER: ${MYSQL_USER:-order_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-order_pass_123!}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - order-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: order-backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SECRET_KEY: ${SECRET_KEY:-order-tracker-secret-change}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${MYSQL_USER:-order_user}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-order_pass_123!}
+      DB_NAME: ${MYSQL_DB:-order_tracker}
+      PORT: 8090
+      DEBUG: ${DEBUG:-False}
+      UPLOAD_FOLDER: /app/uploads
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+    volumes:
+      - ./backend/uploads:/app/uploads
+      - ./backend/init_db.py:/app/init_db.py
+      - ./backend/models.py:/app/models.py
+      - ./backend/routes:/app/routes
+      - ./backend/config.py:/app/config.py
+      - ./backend/app.py:/app/app.py
+      - ./backend/.env:/app/.env
+    command: >
+      sh -c "
+        python -c 'from app import db; from models import Order; from config import Config; from flask import Flask; app = Flask(__name__); app.config.from_object(Config); db.init_app(app); with app.app_context(): db.create_all()' ||
+        echo 'Tables may already exist',
+        python app.py
+      "
+    ports:
+      - "8090:8090"
+    networks:
+      - order-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: order-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - order-network
+
+networks:
+  order-network:
+    driver: bridge
+
+volumes:
+  mysql_data:

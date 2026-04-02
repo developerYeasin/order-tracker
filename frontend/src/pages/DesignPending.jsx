@@ -1,0 +1,980 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { ordersApi, mediaApi } from '../services/api'
+import { DIVISION_OPTIONS, DISTRICT_OPTIONS, getDistrictsByDivision, getUpazilasByDistrict } from '../constants/locations'
+import { Link } from 'react-router-dom'
+
+const StatusBadge = ({ status }) => {
+  const statusMap = {
+    Delivered: 'bg-green-900/30 text-green-400 border-green-700',
+    Returned: 'bg-red-900/30 text-red-400 border-red-700',
+    Submitted: 'bg-yellow-900/30 text-yellow-400 border-yellow-700',
+    default: 'bg-dark-700 text-dark-300 border-dark-600',
+  }
+  return (
+    <span className={`px-2 py-1 text-xs font-medium rounded-full border ${statusMap[status] || statusMap.default}`}>
+      {status || 'Pending'}
+    </span>
+  )
+}
+
+export default function DesignPending() {
+  const [orders, setOrders] = useState([])
+  const [search, setSearch] = useState('')
+  const [selectedDivision, setSelectedDivision] = useState('')
+  const [selectedDistrict, setSelectedDistrict] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [showModal, setShowModal] = useState(false)
+  const [editingOrder, setEditingOrder] = useState(null)
+  const [orderMedia, setOrderMedia] = useState(null)
+  const [notification, setNotification] = useState(null)
+  const fileInputRef = useRef(null)
+  const [selectedOrderIds, setSelectedOrderIds] = useState(new Set())
+  const [showColumnModal, setShowColumnModal] = useState(false)
+  const [selectedColumns, setSelectedColumns] = useState({
+    order_id: true,
+    customer_name: false,
+    phone_number: false,
+    address: false,
+    description: false,
+    price: false,
+    payment_type: false,
+    courier_parcel_id: true,
+    created_at: false,
+    items: true,
+    attachments: false
+  })
+
+  const filteredDistricts = useMemo(() => {
+    if (!selectedDivision) return []
+    return getDistrictsByDivision(selectedDivision)
+  }, [selectedDivision])
+
+  const filteredUpazilas = useMemo(() => {
+    if (!selectedDistrict) return []
+    const district = DISTRICT_OPTIONS.find(d => d.id === selectedDistrict)
+    return district ? getUpazilasByDistrict(district.id) : []
+  }, [selectedDistrict])
+
+  useEffect(() => {
+    fetchOrders()
+  }, [search, selectedDivision, selectedDistrict])
+
+  const fetchOrders = async () => {
+    try {
+      const divisionName = selectedDivision
+        ? (DIVISION_OPTIONS.find(d => d.id === selectedDivision)?.name || '')
+        : ''
+      const districtName = selectedDistrict
+        ? (DISTRICT_OPTIONS.find(d => d.id === selectedDistrict)?.name || '')
+        : ''
+
+      // Filter: design_ready = false, not yet ready for print
+      const res = await ordersApi.getAll({
+        search,
+        division: divisionName,
+        district: districtName,
+        status: '', // Get all, we'll filter client-side for exact criteria
+      })
+
+      // Filter for: NOT design_ready (design pending)
+      const filtered = res.data.filter(order =>
+        order.status?.design_ready === false
+      )
+
+      setOrders(filtered)
+    } catch (error) {
+      console.error('Failed to fetch orders:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type })
+    setTimeout(() => setNotification(null), 3000)
+  }
+
+  // Selection handlers
+  const handleSelectOrder = (orderId) => {
+    setSelectedOrderIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(orderId)) {
+        newSet.delete(orderId)
+      } else {
+        newSet.add(orderId)
+      }
+      return newSet
+    })
+  }
+
+  const handleSelectAll = () => {
+    if (selectedOrderIds.size === orders.length) {
+      setSelectedOrderIds(new Set())
+    } else {
+      setSelectedOrderIds(new Set(orders.map(o => o.id)))
+    }
+  }
+
+  const handlePrintSelected = () => {
+    if (selectedOrderIds.size === 0) {
+      alert('Please select at least one order to print')
+      return
+    }
+    // Open column selection modal
+    setShowColumnModal(true)
+  }
+
+  const handleGeneratePdf = () => {
+    // Validate at least one column selected
+    const hasSelectedColumn = Object.values(selectedColumns).some(val => val)
+    if (!hasSelectedColumn) {
+      alert('Please select at least one column to include')
+      return
+    }
+
+    const orderIds = Array.from(selectedOrderIds).join(',')
+    const columnsJson = JSON.stringify(selectedColumns)
+    const encodedColumns = encodeURIComponent(columnsJson)
+
+    // Open print view in new tab (like Orders page)
+    const printUrl = `/api/orders/print?order_ids=${orderIds}&columns=${encodedColumns}`
+    window.open(printUrl, '_blank')
+    setShowColumnModal(false)
+  }
+
+  const handleColumnChange = (columnKey) => {
+    setSelectedColumns(prev => ({
+      ...prev,
+      [columnKey]: !prev[columnKey]
+    }))
+  }
+
+  const handleMarkAsPrinted = async () => {
+    if (selectedOrderIds.size === 0) {
+      alert('Please select at least one order')
+      return
+    }
+    if (!confirm(`Mark ${selectedOrderIds.size} order(s) as printed?`)) return
+
+    try {
+      for (const orderId of selectedOrderIds) {
+        await ordersApi.updateStatus(orderId, { is_printed: true })
+      }
+      showNotification(`${selectedOrderIds.size} order(s) marked as printed`)
+      setSelectedOrderIds(new Set())
+      fetchOrders()
+    } catch (error) {
+      showNotification('Failed to update orders', 'error')
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedOrderIds.size === 0) {
+      alert('Please select at least one order to delete')
+      return
+    }
+    if (!confirm(`Are you sure you want to delete ${selectedOrderIds.size} order(s)? This action cannot be undone.`)) return
+
+    try {
+      await ordersApi.bulkDelete(Array.from(selectedOrderIds))
+      showNotification(`${selectedOrderIds.size} order(s) deleted successfully`)
+      setSelectedOrderIds(new Set())
+      fetchOrders()
+    } catch (error) {
+      console.error('Bulk delete error:', error)
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to delete orders'
+      showNotification(`Delete failed: ${errorMessage}`, 'error')
+    }
+  }
+
+  const handleUpdateStatus = async (orderId, statusData) => {
+    try {
+      console.log('[Debug] Updating status for order:', orderId, 'data:', statusData)
+      // Status update; design_files (if any) will be sent in statusData
+      console.log('[Debug] Updating status via API...')
+      await ordersApi.updateStatus(orderId, statusData)
+      console.log('[Debug] Status update successful')
+
+      showNotification('Status updated!')
+      fetchOrders()
+      setShowModal(false)
+      setEditingOrder(null)
+    } catch (error) {
+      console.error('[Debug] Status update error:', error)
+      if (error.response) {
+        console.error('[Debug] Error response status:', error.response.status)
+        console.error('[Debug] Error response data:', error.response.data)
+      }
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to update status'
+      showNotification(`Failed to update status: ${errorMessage}`, 'error')
+    }
+  }
+
+  const handleMediaUpload = async (orderId, files) => {
+    try {
+      await mediaApi.upload(orderId, files)
+      showNotification('Files uploaded!')
+      fetchOrders()
+      if (editingOrder && editingOrder.id === orderId) {
+        const mediaRes = await mediaApi.getAll(orderId)
+        setOrderMedia(mediaRes.data)
+      }
+    } catch (error) {
+      showNotification('Failed to upload files', 'error')
+    }
+  }
+
+  // Quick Action Modal Component
+  const QuickActionModal = ({ order, onClose, onUpdate }) => {
+    const [formData, setFormData] = useState({
+      design_ready: order.status?.design_ready || false,
+      is_printed: order.status?.is_printed || false,
+      delivery_status: order.status?.delivery_status || '',
+      courier_parcel_id: order.courier_parcel_id || '',
+    })
+    const [uploadedDesignFiles, setUploadedDesignFiles] = useState([]) // Files already uploaded (with URLs)
+    const [existingDesignFiles, setExistingDesignFiles] = useState([])
+    const [loadingExisting, setLoadingExisting] = useState(true)
+    const [uploading, setUploading] = useState(false)
+    const designFileInputRef = useRef(null)
+
+    // Load existing design files when modal opens
+    useEffect(() => {
+      const loadExistingDesignFiles = async () => {
+        try {
+          const mediaRes = await mediaApi.getAll(order.id)
+          // Show all order-level media
+          setExistingDesignFiles(mediaRes.data)
+        } catch (err) {
+          console.error('Failed to load design files:', err)
+        } finally {
+          setLoadingExisting(false)
+        }
+      }
+      loadExistingDesignFiles()
+    }, [order.id])
+
+    const handleFileChange = async (e) => {
+      const files = e.target.files
+      if (!files || files.length === 0) return
+
+      const validFiles = Array.from(files).filter(file => {
+        const maxSize = 16 * 1024 * 1024
+        const allowedTypes = [
+          'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
+          'video/mp4', 'video/mov', 'video/avi', 'video/mkv', 'video/wmv',
+          'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'text/plain',
+          'application/zip', 'application/x-zip-compressed', 'application/x-7z-compressed', 'application/x-rar-compressed'
+        ]
+
+        if (file.size > maxSize) {
+          alert(`File "${file.name}" exceeds 16MB limit.`)
+          return false
+        }
+        if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+          alert(`File type not allowed for "${file.name}".`)
+          return false
+        }
+        return true
+      })
+
+      if (validFiles.length === 0) {
+        if (designFileInputRef.current) designFileInputRef.current.value = ''
+        return
+      }
+
+      setUploading(true)
+      try {
+        // Upload immediately to new endpoint
+        const response = await mediaApi.uploadDesignFiles(order.id, validFiles)
+        // Add uploaded files to state
+        setUploadedDesignFiles(prev => [...prev, ...response.data.uploaded])
+        showNotification('Design file(s) uploaded successfully')
+      } catch (err) {
+        console.error('Upload failed:', err)
+        const errorMsg = err.response?.data?.error || 'Failed to upload files'
+        showNotification(`Upload failed: ${errorMsg}`, 'error')
+      } finally {
+        setUploading(false)
+        if (designFileInputRef.current) {
+          designFileInputRef.current.value = ''
+        }
+      }
+    }
+
+    const handlePaste = async (e) => {
+      e.preventDefault()
+      const items = (e.clipboardData || e.originalEvent.clipboardData).items
+      const validFiles = []
+      const maxSize = 16 * 1024 * 1024
+      const allowedTypes = [
+        'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
+        'video/mp4', 'video/mov', 'video/avi', 'video/mkv', 'video/wmv',
+        'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/plain',
+        'application/zip', 'application/x-zip-compressed', 'application/x-7z-compressed', 'application/x-rar-compressed'
+      ]
+
+      for (const item of items) {
+        if (item.type.startsWith('image/') || item.type.startsWith('video/')) {
+          const file = item.getAsFile()
+          if (file) {
+            if (file.size > maxSize) {
+              alert(`File "${file.name}" exceeds 16MB limit.`)
+              continue
+            }
+            if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+              alert(`File type "${file.type}" not allowed for "${file.name}".`)
+              continue
+            }
+            validFiles.push(file)
+          }
+        }
+      }
+
+      if (validFiles.length > 0) {
+        setUploading(true)
+        try {
+          const response = await mediaApi.uploadDesignFiles(order.id, validFiles)
+          setUploadedDesignFiles(prev => [...prev, ...response.data.uploaded])
+          showNotification('Design file(s) uploaded successfully')
+        } catch (err) {
+          console.error('Upload failed:', err)
+          showNotification('Failed to upload files', 'error')
+        } finally {
+          setUploading(false)
+        }
+      }
+    }
+
+    const removeUploadedDesignFile = (index) => {
+      // Just remove from state; the file remains on server (can be cleaned up later if needed)
+      setUploadedDesignFiles(prev => prev.filter((_, i) => i !== index))
+    }
+
+    const removeExistingDesignFile = async (mediaId) => {
+      if (!confirm('Delete this design file?')) return
+      try {
+        await mediaApi.delete(mediaId)
+        setExistingDesignFiles(prev => prev.filter(f => f.id !== mediaId))
+        showNotification('Design file deleted')
+      } catch (err) {
+        showNotification('Failed to delete file', 'error')
+      }
+    }
+
+    const handleSubmit = async (e) => {
+      e.preventDefault()
+      const wasDesignReady = order.status?.design_ready || false
+      // Need at least one design file (existing or uploaded) if marking as design ready for first time
+      const hasExistingDesigns = existingDesignFiles.length > 0
+      const hasUploaded = uploadedDesignFiles.length > 0
+      if (formData.design_ready && !wasDesignReady && !hasExistingDesigns && !hasUploaded) {
+        alert('Please upload at least one design file before marking as Design Ready/Approved.')
+        return
+      }
+      // Clean formData: remove empty delivery_status to avoid enum violation
+      const statusData = { ...formData }
+      if (!statusData.delivery_status || statusData.delivery_status.trim() === '') {
+        delete statusData.delivery_status
+      }
+      // Include newly uploaded design files as array of objects
+      if (hasUploaded) {
+        statusData.design_files = uploadedDesignFiles.map(f => ({
+          url: f.url,
+          file_type: f.file_type,
+          filename: f.filename,
+          media_id: f.id
+        }))
+      }
+      await onUpdate(order.id, statusData)
+      onClose()
+    }
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-dark-800 rounded-lg border border-dark-700 w-full max-w-md max-h-[98vh] flex flex-col overflow-hidden">
+          <div className="flex justify-between items-center p-6 border-b border-dark-700">
+            <h3 className="text-lg font-semibold text-white">Quick Update</h3>
+            <button onClick={onClose} className="text-dark-400 hover:text-white">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-grow">
+            <div>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={formData.design_ready}
+                  onChange={(e) => setFormData({ ...formData, design_ready: e.target.checked })}
+                  className="rounded border-dark-600 bg-dark-700 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-dark-300">Design Ready/Approved</span>
+              </label>
+
+              {formData.design_ready && (
+                <div className="mt-4 ml-6 border-l-2 border-primary-500 pl-4">
+                  <label className="block text-sm font-medium text-dark-300 mb-2">Upload Design File</label>
+                  <button
+                    type="button"
+                    tabIndex={0}
+                    className="border-2 border-dashed border-dark-600 rounded-lg p-4 text-center hover:border-primary-500 transition-colors cursor-pointer focus:outline-none focus:border-primary-500 w-full"
+                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary-500') }}
+                    onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-primary-500') }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      e.currentTarget.classList.remove('border-primary-500')
+                      const files = Array.from(e.dataTransfer.files)
+                      handleFileChange({ target: { files } })
+                    }}
+                    onPaste={handlePaste}
+                    onClick={() => designFileInputRef.current?.click()}
+                  >
+                    <input
+                      ref={designFileInputRef}
+                      type="file"
+                      multiple
+                      accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.mp4,.mov,.avi,.mkv,.wmv,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar,.7z"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <svg className="w-8 h-8 text-dark-500 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <p className="text-dark-300 text-xs">Click or drag design files here</p>
+                    <p className="text-xs text-dark-400 mt-1">Images, videos, documents (Max 16MB)</p>
+                  </button>
+                  <p className="text-xs text-dark-500 mt-1">Tip: You can paste images (Ctrl+V) directly into the drop zone</p>
+
+                  {/* Existing Design Files */}
+                  {loadingExisting ? (
+                    <div className="mt-3 text-center text-dark-400 text-sm">Loading design files...</div>
+                  ) : existingDesignFiles.length > 0 && (
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-dark-300">Existing Design Files</label>
+                        <span className="text-xs text-dark-400">{existingDesignFiles.length} file(s)</span>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {existingDesignFiles.map((file) => (
+                          <div key={file.id} className="bg-dark-900 rounded border border-dark-700 p-2 relative group">
+                            {file.file_type === 'Image' ? (
+                              <a href={file.file_url} target="_blank" rel="noopener noreferrer">
+                                <img src={file.file_url} alt={file.file_path?.split('/').pop()} className="w-full h-16 object-cover rounded cursor-pointer hover:opacity-80" />
+                              </a>
+                            ) : (
+                              <div className="w-full h-16 bg-dark-700 rounded flex items-center justify-center">
+                                <svg className="w-6 h-6 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                            )}
+                            <p className="text-xs text-dark-300 truncate mt-1">{file.file_path?.split('/').pop()}</p>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                removeExistingDesignFile(file.id)
+                              }}
+                              className="absolute top-0 right-0 bg-red-500 hover:bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Delete design file"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* New Files to Upload */}
+                  {uploadedDesignFiles.length > 0 && (
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-dark-300">Newly Uploaded Files</label>
+                        <span className="text-xs text-dark-400">{uploadedDesignFiles.length} file(s)</span>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {uploadedDesignFiles.map((file, idx) => (
+                          <div key={file.id || idx} className="bg-dark-900 rounded border border-dark-700 p-2 relative group">
+                            {file.file_type === 'Image' ? (
+                              <a href={file.url} target="_blank" rel="noopener noreferrer">
+                                <img src={file.url} alt={file.filename} className="w-full h-16 object-cover rounded cursor-pointer hover:opacity-80" />
+                              </a>
+                            ) : (
+                              <div className="w-full h-16 bg-dark-700 rounded flex items-center justify-center">
+                                <svg className="w-6 h-6 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                            )}
+                            <p className="text-xs text-dark-300 truncate mt-1">{file.filename}</p>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                removeUploadedDesignFile(idx)
+                              }}
+                              className="absolute top-0 right-0 bg-red-500 hover:bg-red-600 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Remove uploaded file"
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={formData.is_printed}
+                  onChange={(e) => setFormData({ ...formData, is_printed: e.target.checked })}
+                  className="rounded border-dark-600 bg-dark-700 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-dark-300">Printed</span>
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-dark-300 mb-2">Delivery Status</label>
+              <select
+                value={formData.delivery_status}
+                onChange={(e) => setFormData({ ...formData, delivery_status: e.target.value })}
+                className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="">Select Status</option>
+                <option value="Submitted">Submitted to Courier</option>
+                <option value="Delivered">Delivered</option>
+                <option value="Returned">Returned</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-dark-300 mb-2">Courier Parcel ID</label>
+              <input
+                type="text"
+                value={formData.courier_parcel_id}
+                onChange={(e) => setFormData({ ...formData, courier_parcel_id: e.target.value })}
+                placeholder="e.g., TRK123456789"
+                className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white placeholder-dark-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+              >
+                Update Status
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  // Media Modal Component
+  const MediaModal = ({ files, onClose }) => {
+    const handleDownload = (file) => {
+      const url = file.file_url || file.file_path
+      const filename = file.file_path?.split('/').pop() || file.file_url?.split('/').pop() || 'download'
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    }
+
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-dark-800 rounded-lg border border-dark-700 w-full max-w-4xl max-h-90vh overflow-hidden">
+          <div className="flex justify-between items-center p-4 border-b border-dark-700">
+            <h3 className="text-lg font-semibold text-white">Order Media</h3>
+            <button onClick={onClose} className="text-dark-400 hover:text-white">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          <div className="p-4 overflow-y-auto max-h-[70vh]">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {files.map((file) => (
+                <div key={file.id} className="bg-dark-900 rounded-lg overflow-hidden border border-dark-700 relative group">
+                  {file.file_type === 'Image' ? (
+                    <img
+                      src={file.file_url || file.file_path}
+                      alt="Order reference"
+                      className="w-full h-32 object-cover cursor-pointer"
+                      onClick={() => window.open(file.file_url || file.file_path, '_blank')}
+                    />
+                  ) : (
+                    <div className="w-full h-32 bg-dark-700 flex items-center justify-center">
+                      <svg className="w-12 h-12 text-dark-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                  )}
+                  <div className="p-2">
+                    <p className="text-xs text-dark-400 truncate">{file.file_path?.split('/').pop() || file.file_url?.split('/').pop()}</p>
+                  </div>
+                  <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      onClick={() => window.open(file.file_url || file.file_path, '_blank')}
+                      className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-1"
+                      title="View"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownload(file)}
+                      className="bg-green-500 hover:bg-green-600 text-white rounded-full p-1"
+                      title="Download"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Design Pending</h1>
+          <p className="text-dark-400 mt-1">Orders awaiting design approval</p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-dark-800 rounded-lg border border-dark-700 p-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <input
+              type="text"
+              placeholder="Search by name, phone, or order #"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white placeholder-dark-400 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <select
+              value={selectedDivision}
+              onChange={(e) => {
+                setSelectedDivision(e.target.value)
+                setSelectedDistrict('')
+              }}
+              className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">All Divisions</option>
+              {DIVISION_OPTIONS.map((div) => (
+                <option key={div.id} value={div.id}>{div.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <select
+              value={selectedDistrict}
+              onChange={(e) => setSelectedDistrict(e.target.value)}
+              disabled={!selectedDivision}
+              className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <option value="">All Districts</option>
+              {filteredDistricts.map((dist) => (
+                <option key={dist.id} value={dist.id}>{dist.bn_name ? `${dist.name} (${dist.bn_name})` : dist.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Orders List */}
+      <div className="bg-dark-800 rounded-lg border border-dark-700 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center p-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="p-12 text-center">
+            <p className="text-dark-400">No orders ready to print.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handlePrintSelected}
+                  disabled={selectedOrderIds.size === 0}
+                  className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
+                >
+                  Print Selected ({selectedOrderIds.size})
+                </button>
+                <button
+                  onClick={handleMarkAsPrinted}
+                  disabled={selectedOrderIds.size === 0}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
+                >
+                  Mark as Printed ({selectedOrderIds.size})
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={selectedOrderIds.size === 0}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
+                >
+                  Delete Selected ({selectedOrderIds.size})
+                </button>
+                <button
+                  onClick={handleSelectAll}
+                  className="px-3 py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg text-sm transition-colors"
+                >
+                  {selectedOrderIds.size === orders.length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <p className="text-sm text-dark-400">
+                {selectedOrderIds.size} of {orders.length} selected
+              </p>
+            </div>
+
+            <table className="w-full">
+              <thead className="bg-dark-900">
+                <tr>
+                  <th className="px-6 py-4 text-center w-16">
+                    <input
+                      type="checkbox"
+                      checked={selectedOrderIds.size === orders.length && orders.length > 0}
+                      onChange={handleSelectAll}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Order #</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Customer</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Location</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Price</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-dark-700">
+                {orders.map((order) => (
+                  <tr key={order.id} className="hover:bg-dark-900 transition-colors">
+                    <td className="px-6 py-4 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedOrderIds.has(order.id)}
+                        onChange={() => handleSelectOrder(order.id)}
+                        className="w-4 h-4 cursor-pointer"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-white font-medium">#{order.id}</span>
+                      <p className="text-xs text-dark-400">{new Date(order.created_at).toLocaleDateString()}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-white font-medium">{order.customer_name}</p>
+                      <p className="text-sm text-dark-400">{order.phone_number}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-dark-300 text-sm">{order.division}</p>
+                      <p className="text-xs text-dark-400">{order.district}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-dark-300 font-medium">৳{order.price || '0'}</span>
+                      <p className="text-xs text-dark-400">{order.payment_type}</p>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingOrder(order)
+                            setShowModal(true)
+                          }}
+                          className="text-primary-400 hover:text-primary-300 p-1"
+                          title="Quick Update"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const mediaRes = await mediaApi.getAll(order.id)
+                              setOrderMedia(mediaRes.data)
+                              setEditingOrder(order)
+                            } catch (error) {
+                              console.error('Failed to fetch media:', error)
+                              alert('Failed to load media.')
+                            }
+                          }}
+                          className="text-purple-400 hover:text-purple-300 p-1"
+                          title="View Media"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </button>
+                        <Link
+                          to={`/orders`}
+                          className="text-dark-400 hover:text-dark-300 p-1"
+                          title="Full Details"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Notification */}
+      {notification && (
+        <div className={`fixed top-4 right-4 p-4 rounded-lg border ${notification.type === 'error' ? 'bg-red-900/30 border-red-700 text-red-300' : 'bg-green-900/30 border-green-700 text-green-300'}`}>
+          {notification.message}
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showModal && editingOrder && (
+        <QuickActionModal
+          order={editingOrder}
+          onClose={() => {
+            setShowModal(false)
+            setEditingOrder(null)
+          }}
+          onUpdate={handleUpdateStatus}
+        />
+      )}
+
+      {/* Media Modal */}
+      {orderMedia && (
+        <MediaModal
+          files={orderMedia}
+          onClose={() => {
+            setOrderMedia(null)
+            setEditingOrder(null)
+          }}
+        />
+      )}
+
+      {/* Column Selection Modal */}
+      {showColumnModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-dark-800 rounded-lg border border-dark-700 w-full max-w-lg flex flex-col" style={{ maxHeight: '98vh' }}>
+            <div className="flex justify-between items-center p-4 border-b border-dark-700 flex-shrink-0">
+              <h3 className="text-lg font-semibold text-white">Select Columns for Print</h3>
+              <button onClick={() => setShowColumnModal(false)} className="text-dark-400 hover:text-white">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-grow">
+              <p className="text-sm text-dark-300 mb-4">
+                Select the columns to include in the printout. At least one column is required.
+              </p>
+              <div className="space-y-3">
+                {/* Select All checkbox */}
+                <label className="flex items-center space-x-3 cursor-pointer hover:text-dark-200 font-semibold text-primary-400 border-b border-dark-700 pb-2">
+                  <input
+                    type="checkbox"
+                    checked={Object.values(selectedColumns).every(v => v)}
+                    onChange={() => {
+                      const allSelected = Object.values(selectedColumns).every(v => v)
+                      const newColumns = {}
+                      Object.keys(selectedColumns).forEach(key => {
+                        newColumns[key] = !allSelected
+                      })
+                      setSelectedColumns(newColumns)
+                    }}
+                    className="w-4 h-4 rounded border-dark-600 bg-dark-700 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span>{Object.values(selectedColumns).every(v => v) ? 'Deselect All' : 'Select All'}</span>
+                </label>
+
+                {Object.entries(selectedColumns).map(([key, value]) => (
+                  <label key={key} className="flex items-center space-x-3 cursor-pointer hover:text-dark-200">
+                    <input
+                      type="checkbox"
+                      checked={value}
+                      onChange={() => handleColumnChange(key)}
+                      className="w-4 h-4 rounded border-dark-600 bg-dark-700 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-dark-300">
+                      {key === 'order_id' && 'Order ID'}
+                      {key === 'customer_name' && 'Customer Name'}
+                      {key === 'phone_number' && 'Phone Number'}
+                      {key === 'address' && 'Address (Division, District, Upazila)'}
+                      {key === 'description' && 'Description'}
+                      {key === 'price' && 'Price'}
+                      {key === 'payment_type' && 'Payment Type'}
+                      {key === 'courier_parcel_id' && 'Courier Parcel ID'}
+                      {key === 'created_at' && 'Created Date'}
+                      {key === 'items' && 'Items (Size, Qty, Front/Back Images)'}
+                      {key === 'attachments' && 'Attachments/Design Files'}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-4 border-t border-dark-700 flex-shrink-0">
+              <button
+                onClick={() => setShowColumnModal(false)}
+                className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleGeneratePdf}
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+              >
+                Print ({selectedOrderIds.size} order{selectedOrderIds.size > 1 ? 's' : ''})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

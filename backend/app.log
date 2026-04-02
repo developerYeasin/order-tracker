@@ -1,0 +1,204 @@
+ * Serving Flask app 'app'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8090
+ * Running on http://187.124.88.66:8090
+[33mPress CTRL+C to quit[0m
+138.68.133.158 - - [31/Mar/2026 12:58:29] "GET / HTTP/1.1" 200 -
+138.68.133.158 - - [31/Mar/2026 12:58:29] "GET /favicon.svg HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:32:22] "GET /api/verify HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:32:23] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:32:23] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:35:34] "[35m[1mPOST /api/orders HTTP/1.1[0m" 201 -
+127.0.0.1 - - [31/Mar/2026 18:35:36] "POST /api/orders/46/media HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:35:37] "POST /api/orders/46/media HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:35:38] "POST /api/orders/46/media HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:35:38] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:35:44] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:37:43] "POST /api/orders/46/media HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:37:43] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:38:06] "POST /api/orders/46/media HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 18:38:06] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:07:40] "GET /api/verify HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:07:41] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:07:41] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:07:53] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:08:12] "POST /api/orders/46/media HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:08:12] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:08:29] "DELETE /api/media/34 HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:09:29] "POST /api/orders/46/media HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:09:30] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:09:39] "DELETE /api/media/35 HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:09:48] "POST /api/orders/46/media HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:09:48] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:20:03] "GET /api/verify HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:20:04] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:20:04] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:20:19] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:20:36] "POST /api/orders/46/media HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:20:36] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:32:56] "GET /api/verify HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:32:56] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:32:57] "GET /api/orders HTTP/1.1" 200 -
+[Steadfast Debug] order_items query returned 1 items
+  Item 1: size=M, quantity=1
+[Steadfast] Creating consignment for order 46
+  Items: Items: M (1)
+  Combined note: new | Items: M (1)
+  Recipient address: Awona, Sholla, Nawabgonj, Dhaka., Nawabganj, Dhaka
+  Order items count: 1
+[get_order] Order 46 has 1 items
+  Item 14 (size=M) has 2 media files
+    Media 29: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982136/order_tracker/order_46/item_14/iolrm0ipcaf05mcnbxqj.jpg
+    Media 30: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982138/order_tracker/order_46/item_14/q3m7di2v6vogxkhbzwaf.jpg
+[get_order] Order 46 has 1 items
+  Item 14 (size=M) has 4 media files
+    Media 29: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982136/order_tracker/order_46/item_14/iolrm0ipcaf05mcnbxqj.jpg
+    Media 30: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982138/order_tracker/order_46/item_14/q3m7di2v6vogxkhbzwaf.jpg
+    Media 31: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982261/order_tracker/order_46/item_14/gqrrevanzjrvlvj3dlzu.webp
+    Media 32: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982262/order_tracker/order_46/item_14/nspj8vtrskklbtgfpzvl.webp
+[get_order] Order 46 has 1 items
+  Item 14 (size=M) has 5 media files
+    Media 29: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982136/order_tracker/order_46/item_14/iolrm0ipcaf05mcnbxqj.jpg
+    Media 30: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982138/order_tracker/order_46/item_14/q3m7di2v6vogxkhbzwaf.jpg
+    Media 31: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982261/order_tracker/order_46/item_14/gqrrevanzjrvlvj3dlzu.webp
+    Media 32: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982262/order_tracker/order_46/item_14/nspj8vtrskklbtgfpzvl.webp
+    Media 33: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982285/order_tracker/order_46/item_14/om7gsb549o6ebbu52sej.jpg
+[get_order] Order 46 has 1 items
+  Item 14 (size=M) has 5 media files
+    Media 29: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982136/order_tracker/order_46/item_14/iolrm0ipcaf05mcnbxqj.jpg
+    Media 30: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982138/order_tracker/order_46/item_14/q3m7di2v6vogxkhbzwaf.jpg
+    Media 31: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982261/order_tracker/order_46/item_14/gqrrevanzjrvlvj3dlzu.webp
+    Media 32: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982262/order_tracker/order_46/item_14/nspj8vtrskklbtgfpzvl.webp
+    Media 33: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982285/order_tracker/order_46/item_14/om7gsb549o6ebbu52sej.jpg
+[get_order] Order 46 has 1 items
+  Item 14 (size=M) has 6 media files
+    Media 29: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982136/order_tracker/order_46/item_14/iolrm0ipcaf05mcnbxqj.jpg
+    Media 30: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982138/order_tracker/order_46/item_14/q3m7di2v6vogxkhbzwaf.jpg
+    Media 31: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982261/order_tracker/order_46/item_14/gqrrevanzjrvlvj3dlzu.webp
+    Media 32: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982262/order_tracker/order_46/item_14/nspj8vtrskklbtgfpzvl.webp
+    Media 33: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982285/order_tracker/order_46/item_14/om7gsb549o6ebbu52sej.jpg
+    Media 34: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774984092/order_tracker/order_46/item_14/nv2p3b2iwjqwnvmrisdg.jpg
+[get_order] Order 46 has 1 items
+  Item 14 (size=M) has 6 media files
+    Media 29: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982136/order_tracker/order_46/item_14/iolrm0ipcaf05mcnbxqj.jpg
+    Media 30: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982138/order_tracker/order_46/item_14/q3m7di2v6vogxkhbzwaf.jpg
+    Media 31: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982261/order_tracker/order_46/item_14/gqrrevanzjrvlvj3dlzu.webp
+    Media 32: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982262/order_tracker/order_46/item_14/nspj8vtrskklbtgfpzvl.webp
+    Media 33: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982285/order_tracker/order_46/item_14/om7gsb549o6ebbu52sej.jpg
+    Media 35: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774984169/order_tracker/order_46/item_14/dtkpjtbecx3nwtoev3xu.jpg
+[get_order] Order 46 has 1 items
+  Item 14 (size=M) has 6 media files
+    Media 29: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982136/order_tracker/order_46/item_14/iolrm0ipcaf05mcnbxqj.jpg
+    Media 30: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982138/order_tracker/order_46/item_14/q3m7di2v6vogxkhbzwaf.jpg
+    Media 31: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982261/order_tracker/order_46/item_14/gqrrevanzjrvlvj3dlzu.webp
+    Media 32: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982262/order_tracker/order_46/item_14/nspj8vtrskklbtgfpzvl.webp
+    Media 33: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982285/order_tracker/order_46/item_14/om7gsb549o6ebbu52sej.jpg
+    Media 36: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774984187/order_tracker/order_46/item_14/plju2hbuirseyc98zvw9.jpg
+[get_order] Order 46 has 1 items
+  Item 14 (size=M) has 6 media files
+    Media 29: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982136/order_tracker/order_46/item_14/iolrm0ipcaf05mcnbxqj.jpg
+    Media 30: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982138/order_tracker/order_46/item_14/q3m7di2v6vogxkhbzwaf.jpg
+    Media 31: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982261/order_tracker/order_46/item_14/gqrrevanzjrvlvj3dlzu.webp
+    Media 32: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982262/order_tracker/order_46/item_14/nspj8vtrskklbtgfpzvl.webp
+    Media 33: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982285/order_tracker/order_46/item_14/om7gsb549o6ebbu52sej.jpg
+    Media 36: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774984187/order_tracker/order_46/item_14/plju2hbuirseyc98zvw9.jpg
+[get_order] Order 46 has 1 items
+  Item 14 (size=M) has 7 media files
+    Media 29: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982136/order_tracker/order_46/item_14/iolrm0ipcaf05mcnbxqj.jpg
+    Media 30: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982138/order_tracker/order_46/item_14/q3m7di2v6vogxkhbzwaf.jpg
+    Media 31: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982261/order_tracker/order_46/item_14/gqrrevanzjrvlvj3dlzu.webp
+    Media 32: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982262/order_tracker/order_46/item_14/nspj8vtrskklbtgfpzvl.webp
+    Media 33: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774982285/order_tracker/order_46/item_14/om7gsb549o6ebbu52sej.jpg
+    Media 36: side=front, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774984187/order_tracker/order_46/item_14/plju2hbuirseyc98zvw9.jpg
+    Media 37: side=back, file_url=https://res.cloudinary.com/dh2wtspzm/image/upload/v1774984836/order_tracker/order_46/item_14/llngweakgiwoz99yexnu.jpg
+[get_order] Order 46 has 1 items
+  Item 14 (size=M) has 7 media files
+127.0.0.1 - - [31/Mar/2026 19:33:14] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:33:34] "POST /api/orders/46/media HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 19:33:34] "GET /api/orders/46?include_items=true HTTP/1.1" 200 -
+/root/order-tracker/backend/routes/orders.py:387: SAWarning: DELETE statement on table 'activity_log' expected to delete 2 row(s); 0 were matched.  Please set confirm_deleted_rows=False within the mapper configuration to prevent this warning.
+  db.session.commit()
+/root/order-tracker/backend/routes/orders.py:387: SAWarning: DELETE statement on table 'order_status' expected to delete 1 row(s); 0 were matched.  Please set confirm_deleted_rows=False within the mapper configuration to prevent this warning.
+  db.session.commit()
+127.0.0.1 - - [31/Mar/2026 20:10:12] "DELETE /api/orders/37 HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 20:10:13] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 20:10:14] "DELETE /api/orders/38 HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 20:10:15] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 20:46:48] "GET /api/verify HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 20:46:48] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 20:46:49] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 20:47:52] "GET /api/verify HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 20:47:52] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 20:47:53] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:20:58] "GET /api/verify HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:20:58] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:20:59] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:30:30] "GET /api/verify HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:30:31] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:30:32] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:30:44] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:30:45] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:30:45] "GET /api/orders HTTP/1.1" 200 -
+[2026-03-31 22:30:54,782] ERROR in app: Exception on /api/orders/print [GET]
+Traceback (most recent call last):
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 1455, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 870, in full_dispatch_request
+    return self.finalize_request(rv)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 889, in finalize_request
+    response = self.make_response(rv)
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 1161, in make_response
+    raise TypeError(
+TypeError: The view function for 'serve_frontend' did not return a valid response. The function either returned None or ended without a return statement.
+127.0.0.1 - - [31/Mar/2026 22:30:54] "[35m[1mGET /api/orders/print?order_ids=39,40,41,42,43,44,45,46 HTTP/1.1[0m" 500 -
+127.0.0.1 - - [31/Mar/2026 22:31:20] "PUT /api/orders/39/status HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:31:21] "PUT /api/orders/40/status HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:31:21] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:31:31] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:31:32] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:31:35] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:31:36] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:31:42] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:31:47] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:31:47] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:34:25] "GET /api/orders HTTP/1.1" 200 -
+[2026-03-31 22:34:31,744] ERROR in app: Exception on /api/orders/print [GET]
+Traceback (most recent call last):
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 1455, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 870, in full_dispatch_request
+    return self.finalize_request(rv)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 889, in finalize_request
+    response = self.make_response(rv)
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 1161, in make_response
+    raise TypeError(
+TypeError: The view function for 'serve_frontend' did not return a valid response. The function either returned None or ended without a return statement.
+127.0.0.1 - - [31/Mar/2026 22:34:31] "[35m[1mGET /api/orders/print?order_ids=40 HTTP/1.1[0m" 500 -
+127.0.0.1 - - [31/Mar/2026 22:59:47] "GET /api/verify HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:59:47] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:59:51] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:59:52] "GET /api/orders HTTP/1.1" 200 -
+127.0.0.1 - - [31/Mar/2026 22:59:53] "GET /api/orders HTTP/1.1" 200 -
+[2026-03-31 22:59:55,886] ERROR in app: Exception on /api/orders/print [GET]
+Traceback (most recent call last):
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 1455, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 870, in full_dispatch_request
+    return self.finalize_request(rv)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 889, in finalize_request
+    response = self.make_response(rv)
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/order-tracker/backend/venv/lib/python3.12/site-packages/flask/app.py", line 1161, in make_response
+    raise TypeError(
+TypeError: The view function for 'serve_frontend' did not return a valid response. The function either returned None or ended without a return statement.
+127.0.0.1 - - [31/Mar/2026 22:59:55] "[35m[1mGET /api/orders/print?order_ids=40 HTTP/1.1[0m" 500 -
