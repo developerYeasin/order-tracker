@@ -295,13 +295,13 @@ const QuickActionModal = ({ order, onClose, onUpdate }) => {
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors"
+              className="px-4 py-3 md:py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors touch-manipulation min-h-[44px]"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
+              className="px-4 py-3 md:py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors touch-manipulation min-h-[44px]"
             >
               Update Status
             </button>
@@ -1263,7 +1263,81 @@ export default function Orders() {
               </p>
             </div>
 
-            <table className="w-full">
+            {/* Mobile Card View */}
+            <div className="md:hidden space-y-4">
+              {orders.map((order) => (
+                <div key={order.id} className="bg-dark-800 rounded-lg border border-dark-700 p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedOrderIds.has(order.id)}
+                        onChange={() => handleSelectOrder(order.id)}
+                        className="w-5 h-5 cursor-pointer"
+                      />
+                      <div>
+                        <p className="text-white font-medium text-lg">#{order.id}</p>
+                        <p className="text-xs text-dark-400">{new Date(order.created_at).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                    <StatusBadge status={order.status?.delivery_status} />
+                  </div>
+
+                  <div className="space-y-2 mb-3">
+                    <div>
+                      <p className="text-white font-medium">{order.customer_name}</p>
+                      <p className="text-sm text-dark-400">{order.phone_number}</p>
+                    </div>
+                    <div>
+                      <p className="text-dark-300 text-sm">{order.division}, {order.district}</p>
+                    </div>
+                    <div className="flex gap-4">
+                      <div>
+                        <p className="text-dark-400 text-xs">Price</p>
+                        <p className="text-white font-medium">৳{order.price || '0'}</p>
+                        <p className="text-xs text-dark-400">{order.payment_type}</p>
+                      </div>
+                      <div>
+                        <p className="text-dark-400 text-xs">Items</p>
+                        <p className="text-white">
+                          {order.items?.reduce((sum, item) => sum + item.quantity, 0) || 0}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <ProgressBar order={order} />
+
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => {
+                        setOrderModalOrder(order)
+                        setShowOrderModal(true)
+                      }}
+                      className="flex-1 px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm transition-colors touch-manipulation min-h-[44px]"
+                    >
+                      View
+                    </button>
+                    <button
+                      onClick={() => openQuickAction(order)}
+                      className="flex-1 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg text-sm transition-colors touch-manipulation min-h-[44px]"
+                    >
+                      Quick Update
+                    </button>
+                    <button
+                      onClick={() => handleDelete(order.id)}
+                      className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm transition-colors touch-manipulation min-h-[44px]"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto -mx-6 sm:mx-0">
+              <table className="w-full min-w-[800px]">
               <thead className="bg-dark-900">
                 <tr>
                   <th className="px-6 py-4 text-center w-16">
@@ -1382,6 +1456,7 @@ export default function Orders() {
               </tbody>
             </table>
           </div>
+        </div>
         )}
       </div>
 
@@ -1406,7 +1481,7 @@ export default function Orders() {
                     required
                     value={formData.customer_name}
                     onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
-                    className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation resize-none"
                   />
                 </div>
                 <div>
@@ -1416,7 +1491,7 @@ export default function Orders() {
                     required
                     value={formData.phone_number}
                     onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
-                    className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation resize-none"
                   />
                 </div>
                 <div>
@@ -1446,12 +1521,12 @@ export default function Orders() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-dark-300 mb-2">Upazila/Zone *</label>
+                  <label className="block text-sm font-medium text-dark-300 mb-2">Thana *</label>
                   <SearchableSelect
                     options={filteredFormUpazilas}
                     value={formData.upazila_id}
                     onChange={(value) => setFormData({ ...formData, upazila_id: value })}
-                    placeholder="Select Upazila/Zone"
+                    placeholder="Select Thana"
                     isDisabled={!formData.district_id}
                   />
                 </div>
@@ -1463,7 +1538,7 @@ export default function Orders() {
                     onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                     rows="3"
                     placeholder="Full delivery address"
-                    className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation resize-none"
                   />
                 </div>
                 <div>
@@ -1471,7 +1546,7 @@ export default function Orders() {
                   <select
                     value={formData.payment_type}
                     onChange={(e) => setFormData({ ...formData, payment_type: e.target.value })}
-                    className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation resize-none"
                   >
                     <option value="COD">Cash on Delivery</option>
                     <option value="Prepaid">Prepaid</option>
@@ -1739,14 +1814,14 @@ export default function Orders() {
                   type="button"
                   onClick={() => setShowForm(false)}
                   disabled={saving}
-                  className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-3 md:py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation min-h-[44px]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-800 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-3 md:py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-800 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation min-h-[44px]"
                 >
                   {saving ? 'Creating...' : 'Create Order'}
                 </button>
@@ -1851,7 +1926,7 @@ export default function Orders() {
                       {key === 'order_id' && 'Order ID'}
                       {key === 'customer_name' && 'Customer Name'}
                       {key === 'phone_number' && 'Phone Number'}
-                      {key === 'address' && 'Address (Division, District, Upazila)'}
+                      {key === 'address' && 'Address (Division, District, Thana)'}
                       {key === 'description' && 'Description'}
                       {key === 'price' && 'Price'}
                       {key === 'payment_type' && 'Payment Type'}

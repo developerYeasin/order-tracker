@@ -58,7 +58,7 @@ def get_orders():
     result = []
 
     for order in orders:
-        order_data = order.to_dict()
+        order_data = order.to_dict(with_items=True)
         if order.status:
             order_data['status'] = order.status.to_dict()
         else:

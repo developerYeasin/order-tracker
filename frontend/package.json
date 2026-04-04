@@ -10,6 +10,7 @@
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
+    "@bangladeshi/bangladesh-address": "^2.1.0",
     "@hello-pangea/dnd": "^18.0.1",
     "@heroicons/react": "^2.0.18",
     "axios": "^1.6.0",

@@ -503,7 +503,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
                   name="customer_name"
                   value={formData.customer_name || ''}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation"
                 />
               </div>
               <div>
@@ -515,7 +515,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
                   name="phone_number"
                   value={formData.phone_number || ''}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation"
                 />
               </div>
               <div>
@@ -550,13 +550,13 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Upazila/Zone
+                  Thana
                 </label>
                 <SearchableSelect
                   options={filteredUpazilas}
                   value={formData.upazila_id || ''}
                   onChange={(value) => setFormData({ ...formData, upazila_id: value })}
-                  placeholder="Select Upazila/Zone"
+                  placeholder="Select Thana"
                   isDisabled={!formData.district_id}
                 />
               </div>
@@ -570,7 +570,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
                   onChange={handleChange}
                   rows="3"
                   placeholder="Full delivery address"
-                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation resize-none"
                 />
               </div>
               <div>
@@ -581,7 +581,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
                   name="payment_type"
                   value={formData.payment_type || ''}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation"
                 >
                   <option value="COD">Cash on Delivery</option>
                   <option value="Prepaid">Prepaid</option>
@@ -596,7 +596,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
                   name="courier_parcel_id"
                   value={formData.courier_parcel_id || ''}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation"
                 />
               </div>
               <div>
@@ -609,7 +609,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
                   value={formData.price || ''}
                   onChange={handleChange}
                   placeholder="0.00"
-                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation"
                 />
               </div>
               <div className="md:col-span-2">
@@ -621,7 +621,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
                   value={formData.description || ''}
                   onChange={handleChange}
                   rows="4"
-                  className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation resize-none"
                 />
               </div>
               <div className="md:col-span-2">
@@ -1099,7 +1099,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors"
+            className="px-4 py-3 md:py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors touch-manipulation min-h-[44px]"
             disabled={loading}
           >
             Cancel
@@ -1108,7 +1108,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
             type="submit"
             form="order-form"
             disabled={loading}
-            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-800 text-white rounded-lg transition-colors"
+            className="px-4 py-3 md:py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-800 text-white rounded-lg transition-colors touch-manipulation min-h-[44px] text-base md:text-sm"
           >
             {loading ? 'Saving...' : 'Save Changes'}
           </button>

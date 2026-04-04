@@ -945,7 +945,7 @@ export default function DesignPending() {
                       {key === 'order_id' && 'Order ID'}
                       {key === 'customer_name' && 'Customer Name'}
                       {key === 'phone_number' && 'Phone Number'}
-                      {key === 'address' && 'Address (Division, District, Upazila)'}
+                      {key === 'address' && 'Address (Division, District, Thana)'}
                       {key === 'description' && 'Description'}
                       {key === 'price' && 'Price'}
                       {key === 'payment_type' && 'Payment Type'}
