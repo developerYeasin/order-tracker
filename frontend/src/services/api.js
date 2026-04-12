@@ -1,6 +1,7 @@
 import axios from 'axios'
 
-const API_BASE = 'http://localhost:8090/api'
+// const API_BASE = 'http://localhost:8090/api'
+const API_BASE = 'https://ordertrackerbackend.bizscal.com/api'
 
 const api = axios.create({
   baseURL: API_BASE,
