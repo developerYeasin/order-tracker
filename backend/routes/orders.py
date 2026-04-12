@@ -673,7 +673,8 @@ def create_order_item(order_id):
         order_id=order.id,
         size=data['size'],
         quantity=quantity,
-        position=position
+        position=position,
+        note=data.get('note')
     )
     db.session.add(item)
     log_activity(order_id, 'Item Created', f"Size: {item.size}, Qty: {item.quantity}")
@@ -714,6 +715,8 @@ def update_order_item(order_id, item_id):
                 return jsonify({'error': 'position must be an integer'}), 400
         else:
             item.position = None
+    if 'note' in data:
+        item.note = data['note']
 
     log_activity(order_id, 'Item Updated', f"Item {item_id} updated")
     db.session.commit()

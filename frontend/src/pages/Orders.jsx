@@ -1,19 +1,22 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ordersApi, mediaApi, settingsApi } from '../services/api'
 import { DIVISION_OPTIONS, DISTRICT_OPTIONS, UPAZILA_OPTIONS, getDistrictsByDivision, getUpazilasByDistrict } from '../constants/locations'
 import ConfirmationModal from '../components/ConfirmationModal'
-import OrderModal from '../components/OrderModal'
+import { TableSkeleton } from '../components/ui/Skeleton'
 import SearchableSelect from '../components/SearchableSelect'
 
 const StatusBadge = ({ status }) => {
   const statusMap = {
-    Delivered: 'bg-green-900/30 text-green-400 border-green-700',
-    Returned: 'bg-red-900/30 text-red-400 border-red-700',
-    Submitted: 'bg-yellow-900/30 text-yellow-400 border-yellow-700',
-    default: 'bg-dark-700 text-dark-300 border-dark-600',
+    Delivered: 'bg-gradient-to-r from-green-500 to-emerald-500 text-white border-0 shadow-lg shadow-green-500/25',
+    Returned: 'bg-gradient-to-r from-red-500 to-rose-500 text-white border-0 shadow-lg shadow-red-500/25',
+    Submitted: 'bg-gradient-to-r from-yellow-500 to-amber-500 text-white border-0 shadow-lg shadow-yellow-500/25',
+    'Out for Delivery': 'bg-gradient-to-r from-orange-500 to-amber-600 text-white border-0 shadow-lg shadow-orange-500/25',
+    default: 'bg-gradient-to-r from-dark-600 to-dark-700 text-dark-300 border-0',
   }
+  const badgeStyle = statusMap[status] || statusMap.default
   return (
-    <span className={`px-2 py-1 text-xs font-medium rounded-full border ${statusMap[status] || statusMap.default}`}>
+    <span className={`px-3 py-1.5 text-xs font-semibold rounded-full ${badgeStyle} animate-fade-in`}>
       {status || 'Pending'}
     </span>
   )
@@ -28,11 +31,15 @@ const ProgressBar = ({ order }) => {
   ]
 
   return (
-    <div className="flex items-center gap-1 mt-2">
+    <div className="flex items-center gap-1.5 mt-2.5">
       {steps.map((step, idx) => (
         <React.Fragment key={step.label}>
-          <div className={`flex-1 h-1.5 rounded-full ${step.done ? 'bg-primary-500' : 'bg-dark-700'}`} />
-          {idx < steps.length - 1 && <div className="w-2" />}
+          <div className={`flex-1 h-1.5 rounded-full transition-all duration-500 ${
+            step.done
+              ? 'bg-gradient-to-r from-primary-500 to-accent-cyan shadow-sm shadow-primary-500/50'
+              : 'bg-dark-700'
+          }`} />
+          {idx < steps.length - 1 && <div className="w-1.5" />}
         </React.Fragment>
       ))}
     </div>
@@ -390,6 +397,7 @@ const MediaModal = ({ files, onClose }) => {
 }
 
 export default function Orders() {
+  const navigate = useNavigate()
   const [orders, setOrders] = useState([])
   const [search, setSearch] = useState('')
   const [selectedDivision, setSelectedDivision] = useState('')
@@ -414,10 +422,8 @@ export default function Orders() {
     media_files: [],
     items: [], // Array of { size, quantity, position }
   })
-  const [newItem, setNewItem] = useState({ size: 'M', quantity: 1 })
+  const [newItem, setNewItem] = useState({ size: 'M', quantity: 1, note: '' })
   const [itemFiles, setItemFiles] = useState({}) // { index: { front: File[], back: File[] } }
-  const [orderModalOrder, setOrderModalOrder] = useState(null)
-  const [showOrderModal, setShowOrderModal] = useState(false)
   const [selectedOrderIds, setSelectedOrderIds] = useState(new Set())
   const [showColumnModal, setShowColumnModal] = useState(false)
   const [selectedColumns, setSelectedColumns] = useState({
@@ -558,7 +564,7 @@ export default function Orders() {
       ...prev,
       items: [...prev.items, { ...newItem, position: prev.items.length + 1 }]
     }))
-    setNewItem({ size: 'M', quantity: 1 }) // reset
+    setNewItem({ size: 'M', quantity: 1, note: '' }) // reset
   }
 
   const handleRemoveItem = (index) => {
@@ -711,25 +717,6 @@ export default function Orders() {
     }))
   }
 
-  const handleMarkAsReady = async () => {
-    if (selectedOrderIds.size === 0) {
-      alert('Please select at least one order')
-      return
-    }
-    if (!confirm(`Mark ${selectedOrderIds.size} order(s) as Design Ready?`)) return
-
-    try {
-      for (const orderId of selectedOrderIds) {
-        await ordersApi.updateStatus(orderId, { design_ready: true })
-      }
-      showNotification(`${selectedOrderIds.size} order(s) marked as Design Ready`)
-      setSelectedOrderIds(new Set())
-      fetchOrders()
-    } catch (error) {
-      showNotification('Failed to update orders', 'error')
-    }
-  }
-
   const handleDeleteSelected = async () => {
     if (selectedOrderIds.size === 0) {
       alert('Please select at least one order to delete')
@@ -848,7 +835,8 @@ export default function Orders() {
         items: formData.items.map(item => ({
           size: item.size,
           quantity: item.quantity,
-          position: item.position
+          position: item.position,
+          note: item.note
         }))
       }
 
@@ -1047,33 +1035,6 @@ export default function Orders() {
     }
   }
 
-  const openOrderModal = async (order) => {
-    try {
-      const res = await ordersApi.getById(order.id, { include_items: true })
-      const orderData = res.data
-
-      // Map division, district, upazila names to IDs for the edit form
-      const division = DIVISION_OPTIONS.find(div => div.name === orderData.division)
-      const district = DISTRICT_OPTIONS.find(d => d.name === orderData.district)
-      let upazila_id = ''
-      if (district) {
-        const upazilas = getUpazilasByDistrict(district.id)
-        const upazila = upazilas.find(u => u.name === orderData.upazila_zone)
-        upazila_id = upazila?.id || ''
-      }
-
-      // Add ID fields to orderData for the modal form
-      orderData.division_id = division?.id || ''
-      orderData.district_id = district?.id || ''
-      orderData.upazila_id = upazila_id
-
-      setOrderModalOrder(orderData)
-      setShowOrderModal(true)
-    } catch (error) {
-      console.error('Failed to fetch order details:', error)
-      alert('Failed to load order details')
-    }
-  }
 
   const sendToSteadfast = async (orderId, e) => {
     e.stopPropagation()
@@ -1093,38 +1054,6 @@ export default function Orders() {
     }
   }
 
-  const handleOrderSave = async (orderData) => {
-    setSaving(true)
-    try {
-      const mediaFiles = orderData.media_files
-      const updateData = { ...orderData }
-      delete updateData.media_files
-
-      await ordersApi.update(updateData.id, updateData)
-
-      if (mediaFiles && mediaFiles.length > 0) {
-        try {
-          await mediaApi.uploadDesignFiles(updateData.id, mediaFiles)
-        } catch (mediaErr) {
-          console.warn('Media upload failed:', mediaErr)
-        }
-      }
-
-      showNotification('Order updated successfully!')
-      fetchOrders()
-      // Refresh modal order if it's the same
-      if (orderModalOrder && orderModalOrder.id === orderData.id) {
-        const res = await ordersApi.getById(orderModalOrder.id, { include_items: true })
-        setOrderModalOrder(res.data)
-      }
-    } catch (error) {
-      console.error('Failed to update order:', error)
-      showNotification('Failed to update order: ' + (error.response?.data?.error || error.message))
-    } finally {
-      setSaving(false)
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -1133,7 +1062,7 @@ export default function Orders() {
           <p className="text-dark-400 mt-1">Manage all your custom t-shirt orders</p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => navigate('/orders/create')}
           className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1217,14 +1146,20 @@ export default function Orders() {
       )}
 
       {/* Orders List */}
-      <div className="bg-dark-800 rounded-lg border border-dark-700 overflow-hidden">
+      <div className="bg-gradient-to-br from-dark-800 to-dark-900 rounded-2xl border border-dark-700/50 shadow-soft overflow-hidden animate-fade-in">
         {loading ? (
-          <div className="flex items-center justify-center p-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+          <div className="p-6">
+            <TableSkeleton rows={8} columns={7} />
           </div>
         ) : orders.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-dark-400">No orders found. Create your first order!</p>
+          <div className="p-20 text-center animate-fade-in">
+            <div className="w-24 h-24 bg-gradient-to-br from-primary-500/20 to-accent-purple/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <svg className="w-12 h-12 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.587a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-2.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+              </svg>
+            </div>
+            <p className="text-xl font-medium text-white mb-2">No orders yet</p>
+            <p className="text-dark-400 text-sm">Create your first order to get started!</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -1236,13 +1171,6 @@ export default function Orders() {
                   className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
                 >
                   Print Selected ({selectedOrderIds.size})
-                </button>
-                <button
-                  onClick={handleMarkAsReady}
-                  disabled={selectedOrderIds.size === 0}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
-                >
-                  Mark Design Ready ({selectedOrderIds.size})
                 </button>
                 <button
                   onClick={handleDeleteSelected}
@@ -1310,13 +1238,10 @@ export default function Orders() {
 
                   <div className="flex gap-2 mt-3">
                     <button
-                      onClick={() => {
-                        setOrderModalOrder(order)
-                        setShowOrderModal(true)
-                      }}
+                      onClick={() => navigate(`/orders/${order.id}/edit`)}
                       className="flex-1 px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm transition-colors touch-manipulation min-h-[44px]"
                     >
-                      View
+                      Edit
                     </button>
                     <button
                       onClick={() => openQuickAction(order)}
@@ -1338,68 +1263,106 @@ export default function Orders() {
             {/* Desktop Table View */}
             <div className="hidden md:block overflow-x-auto -mx-6 sm:mx-0">
               <table className="w-full min-w-[800px]">
-              <thead className="bg-dark-900">
+              <thead className="bg-gradient-to-r from-dark-900 to-dark-800">
                 <tr>
                   <th className="px-6 py-4 text-center w-16">
                     <input
                       type="checkbox"
                       checked={selectedOrderIds.size === orders.length && orders.length > 0}
                       onChange={handleSelectAll}
-                      className="w-4 h-4 cursor-pointer"
+                      className="w-4 h-4 cursor-pointer rounded text-primary-500 focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-dark-800"
                     />
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Order #</th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Customer</th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Location</th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Price</th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Actions</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Order #</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Customer</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Location</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Price</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Parcel ID</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-dark-700">
+              <tbody className="divide-y divide-dark-700/50">
                 {orders.map((order) => (
-                  <tr key={order.id} className="hover:bg-dark-900 transition-colors">
-                    <td className="px-6 py-4 text-center">
+                  <tr key={order.id} className="hover:bg-dark-700/50 transition-all duration-200 group">
+                    <td className="px-4 md:px-6 py-4 text-center">
                       <input
                         type="checkbox"
                         checked={selectedOrderIds.has(order.id)}
                         onChange={() => handleSelectOrder(order.id)}
-                        className="w-4 h-4 cursor-pointer"
+                        className="w-4 h-4 cursor-pointer rounded text-primary-500 focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-dark-800"
                       />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-white font-medium">#{order.id}</span>
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
+                      <span className="text-white font-semibold group-hover:text-primary-400 transition-colors">#{order.id}</span>
                       <p className="text-xs text-dark-400">{new Date(order.created_at).toLocaleDateString()}</p>
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-white font-medium">{order.customer_name}</p>
+                    <td className="px-4 md:px-6 py-4">
+                      <p className="text-white font-medium group-hover:text-primary-300 transition-colors">{order.customer_name}</p>
                       <p className="text-sm text-dark-400">{order.phone_number}</p>
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-dark-300 text-sm">{order.division}</p>
+                    <td className="px-4 md:px-6 py-4">
+                      <p className="text-dark-200 text-sm">{order.division}</p>
                       <p className="text-xs text-dark-400">{order.district}</p>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-dark-300 font-medium">৳{order.price || '0'}</span>
+                    <td className="px-4 md:px-6 py-4">
+                      <span className="text-dark-200 font-semibold">৳{order.price || '0'}</span>
                       <p className="text-xs text-dark-400">{order.payment_type}</p>
                     </td>
-                    <td className="px-6 py-4">
-                      <StatusBadge status={order.status?.delivery_status} />
-                      <ProgressBar order={order} />
+                    <td className="px-4 md:px-6 py-4">
+                      {order.courier_parcel_id ? (
+                        <code className="bg-dark-700 px-2 py-1 rounded text-sm text-primary-400">{order.courier_parcel_id}</code>
+                      ) : (
+                        <span className="text-dark-500">-</span>
+                      )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
+                    <td className="px-4 md:px-6 py-4">
+                      <div className="flex flex-col gap-2">
+                        <StatusBadge status={order.status?.delivery_status} />
+                        <ProgressBar order={order} />
+                      </div>
+                    </td>
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => navigate(`/orders/${order.id}/edit`)}
+                          className="group relative p-2 bg-primary-500/10 hover:bg-primary-500/20 text-primary-400 hover:text-primary-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                          title="Edit Order"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Edit
+                          </span>
+                        </button>
                         <button
                           onClick={() => {
                             setEditingOrder(order)
                             setShowModal(true)
                           }}
-                          className="text-primary-400 hover:text-primary-300 p-1"
+                          className="group relative p-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
                           title="Quick Update"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Quick Update
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => navigate(`/orders/${order.id}`)}
+                          className="group relative p-2 bg-accent-cyan/10 hover:bg-accent-cyan/20 text-accent-cyan hover:text-accent-teal rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                          title="View Details"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            View Details
+                          </span>
                         </button>
                         <button
                           onClick={async () => {
@@ -1413,41 +1376,41 @@ export default function Orders() {
                               alert('Failed to load media. See console for details.')
                             }
                           }}
-                          className="text-purple-400 hover:text-purple-300 p-1"
+                          className="group relative p-2 bg-accent-purple/10 hover:bg-accent-purple/20 text-accent-purple hover:text-accent-pink rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
                           title="View Media"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>
-                        </button>
-                        <button
-                          onClick={() => openOrderModal(order)}
-                          className="text-teal-400 hover:text-teal-300 p-1"
-                          title="View/Edit Order"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Media
+                          </span>
                         </button>
                         {!order.courier_parcel_id && (
                           <button
                             onClick={(e) => sendToSteadfast(order.id, e)}
-                            className="text-orange-400 hover:text-orange-300 p-1"
+                            className="group relative p-2 bg-accent-orange/10 hover:bg-accent-orange/20 text-accent-orange hover:text-orange-400 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
                             title="Send to Steadfast"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 18h.01" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 18h.01" />
                             </svg>
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                              Steadfast
+                            </span>
                           </button>
                         )}
                         <button
                           onClick={() => handleDeleteOrder(order.id)}
-                          className="text-red-400 hover:text-red-300 p-1"
+                          className="group relative p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
                           title="Delete"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Delete
+                          </span>
                         </button>
                       </div>
                     </td>
@@ -1688,6 +1651,20 @@ export default function Orders() {
                               className="bg-dark-700 border border-dark-600 rounded text-white text-sm w-16 px-2 py-1"
                             />
                           </div>
+                          <div className="w-full mt-2">
+                            <label className="block text-xs text-dark-400 mb-1">Note (optional)</label>
+                            <textarea
+                              value={item.note || ''}
+                              onChange={(e) => {
+                                const newItems = [...formData.items]
+                                newItems[idx] = { ...newItems[idx], note: e.target.value }
+                                setFormData({ ...formData, items: newItems })
+                              }}
+                              placeholder="Add a note..."
+                              className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
+                              rows="2"
+                            />
+                          </div>
                           <button
                             type="button"
                             onClick={() => handleRemoveItem(idx)}
@@ -1796,6 +1773,16 @@ export default function Orders() {
                           className="bg-dark-700 border border-dark-600 rounded text-white text-sm w-20 px-2 py-1"
                         />
                       </div>
+                      <div className="w-full">
+                        <label className="block text-xs text-dark-400 mb-1">Note (optional)</label>
+                        <textarea
+                          value={newItem.note || ''}
+                          onChange={(e) => setNewItem({ ...newItem, note: e.target.value })}
+                          placeholder="Add a note..."
+                          className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
+                          rows="2"
+                        />
+                      </div>
                       <button
                         type="button"
                         onClick={handleAddItem}
@@ -1865,19 +1852,6 @@ export default function Orders() {
         cancelLabel="Cancel"
         variant="danger"
       />
-
-      {/* Full Order Edit Modal */}
-      {showOrderModal && orderModalOrder && (
-        <OrderModal
-          order={orderModalOrder}
-          onClose={() => {
-            setShowOrderModal(false)
-            setOrderModalOrder(null)
-          }}
-          onSave={handleOrderSave}
-          loading={saving}
-        />
-      )}
 
       {/* Column Selection Modal */}
       {showColumnModal && (

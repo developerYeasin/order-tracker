@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { ordersApi, mediaApi } from '../services/api'
 import { DIVISION_OPTIONS, DISTRICT_OPTIONS, getDistrictsByDivision, getUpazilasByDistrict } from '../constants/locations'
 import OrderModal from '../components/OrderModal'
@@ -9,7 +9,7 @@ const StatusBadge = ({ status }) => {
   const statusMap = {
     Delivered: 'bg-green-900/30 text-green-400 border-green-700',
     Returned: 'bg-red-900/30 text-red-400 border-red-700',
-    Submitted: 'bg-yellow-900/30 text-yellow-400 border-yellow-700',
+    Submitted: 'bg-yellow-900/30 text-yellow-400 border-green-700',
     default: 'bg-dark-700 text-dark-300 border-dark-600',
   }
   return (
@@ -19,7 +19,7 @@ const StatusBadge = ({ status }) => {
   )
 }
 
-export default function Printed() {
+export default function InTransit() {
   const navigate = useNavigate()
   const [orders, setOrders] = useState([])
   const [search, setSearch] = useState('')
@@ -59,7 +59,6 @@ export default function Printed() {
         ? (DISTRICT_OPTIONS.find(d => d.id === selectedDistrict)?.name || '')
         : ''
 
-      // Filter: is_printed = true, no courier_parcel_id, delivery_status not 'Submitted'
       const res = await ordersApi.getAll({
         search,
         division: divisionName,
@@ -67,11 +66,9 @@ export default function Printed() {
         status: '',
       })
 
-      // Filter for: is_printed AND NOT courier_parcel_id AND NOT delivery_status='Submitted'
+      // Filter for: delivery_status === 'Submitted' (In Transit)
       const filtered = res.data.filter(order =>
-        order.status?.is_printed === true &&
-        !order.courier_parcel_id &&
-        order.status?.delivery_status !== 'Submitted'
+        order.status?.delivery_status === 'Submitted'
       )
 
       setOrders(filtered)
@@ -108,28 +105,18 @@ export default function Printed() {
     }
   }
 
-  const handlePrintSelected = () => {
-    if (selectedOrderIds.size === 0) {
-      alert('Please select at least one order to print')
-      return
-    }
-    const orderIds = Array.from(selectedOrderIds).join(',')
-    const printUrl = `/api/orders/print?order_ids=${orderIds}`
-    window.open(printUrl, '_blank')
-  }
-
   const handleMarkAsDelivered = async () => {
     if (selectedOrderIds.size === 0) {
       alert('Please select at least one order')
       return
     }
-    if (!confirm(`Mark ${selectedOrderIds.size} order(s) as delivered?`)) return
+    if (!confirm(`Mark ${selectedOrderIds.size} order(s) as Delivered?`)) return
 
     try {
       for (const orderId of selectedOrderIds) {
         await ordersApi.updateStatus(orderId, { delivery_status: 'Delivered' })
       }
-      showNotification(`${selectedOrderIds.size} order(s) marked as delivered`)
+      showNotification(`${selectedOrderIds.size} order(s) marked as Delivered`)
       setSelectedOrderIds(new Set())
       fetchOrders()
     } catch (error) {
@@ -251,7 +238,7 @@ export default function Printed() {
       e.preventDefault()
       const items = (e.clipboardData || e.originalEvent.clipboardData).items
       const validFiles = []
-      const maxSize = 16 * 1024 * 1024 // 16MB
+      const maxSize = 16 * 1024 * 1024
       const allowedTypes = [
         'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
         'video/mp4', 'video/mov', 'video/avi', 'video/mkv', 'video/wmv',
@@ -289,11 +276,6 @@ export default function Printed() {
 
     const handleSubmit = async (e) => {
       e.preventDefault()
-      const wasDesignReady = order.status?.design_ready || false
-      if (formData.design_ready && !wasDesignReady && designFiles.length === 0) {
-        alert('Please upload at least one design file before marking as Design Ready/Approved.')
-        return
-      }
       await onUpdate(order.id, formData, designFiles)
       onClose()
     }
@@ -320,74 +302,6 @@ export default function Printed() {
                 />
                 <span className="text-dark-300">Design Ready/Approved</span>
               </label>
-
-              {formData.design_ready && (
-                <div className="mt-4 ml-6 border-l-2 border-primary-500 pl-4">
-                  <label className="block text-sm font-medium text-dark-300 mb-2">Upload Design File</label>
-                  <button
-                    type="button"
-                    tabIndex={0}
-                    className="border-2 border-dashed border-dark-600 rounded-lg p-4 text-center hover:border-primary-500 transition-colors cursor-pointer focus:outline-none focus:border-primary-500 w-full"
-                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary-500') }}
-                    onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-primary-500') }}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      e.currentTarget.classList.remove('border-primary-500')
-                      const files = Array.from(e.dataTransfer.files)
-                      handleFileChange({ target: { files } })
-                    }}
-                    onPaste={handlePaste}
-                    onClick={() => designFileInputRef.current?.click()}
-                  >
-                    <input
-                      ref={designFileInputRef}
-                      type="file"
-                      multiple
-                      accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.mp4,.mov,.avi,.mkv,.wmv,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar,.7z"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                    <svg className="w-8 h-8 text-dark-500 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    <p className="text-dark-300 text-xs">Click or drag design files here</p>
-                    <p className="text-xs text-dark-400 mt-1">Images, videos, documents (Max 16MB)</p>
-                  </button>
-                  <p className="text-xs text-dark-500 mt-1">Tip: You can paste images (Ctrl+V) directly into the drop zone</p>
-
-                  {designFiles.length > 0 && (
-                    <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2">
-                      {designFiles.map((file, idx) => (
-                        <div key={idx} className="bg-dark-900 rounded border border-dark-700 p-2 relative">
-                          {file.type.startsWith('image/') ? (
-                            <img src={URL.createObjectURL(file)} alt={file.name} className="w-full h-16 object-cover rounded" onLoad={(e) => URL.revokeObjectURL(e.target.src)} />
-                          ) : (
-                            <div className="w-full h-16 bg-dark-700 rounded flex items-center justify-center">
-                              <svg className="w-6 h-6 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                          )}
-                          <p className="text-xs text-dark-300 truncate mt-1">{file.name}</p>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              removeDesignFile(idx)
-                            }}
-                            className="absolute top-0 right-0 bg-red-500 hover:bg-red-600 text-white rounded-full p-0.5"
-                            title="Remove"
-                          >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
             <div>
@@ -410,7 +324,7 @@ export default function Printed() {
                 className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 <option value="">Select Status</option>
-                <option value="Submitted">Submitted to Courier</option>
+                <option value="Submitted">In Transit</option>
                 <option value="Delivered">Delivered</option>
                 <option value="Returned">Returned</option>
               </select>
@@ -529,8 +443,8 @@ export default function Printed() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-white">Printed Orders</h1>
-          <p className="text-dark-400 mt-1">Orders that have been printed but not yet handed to courier</p>
+          <h1 className="text-2xl font-bold text-white">In Transit</h1>
+          <p className="text-dark-400 mt-1">Orders that have been submitted to courier and are in transit</p>
         </div>
       </div>
 
@@ -581,23 +495,16 @@ export default function Printed() {
       <div className="bg-dark-800 rounded-lg border border-dark-700 overflow-hidden">
         {loading ? (
           <div className="p-6">
-            <TableSkeleton rows={8} columns={6} />
+            <TableSkeleton rows={8} columns={7} />
           </div>
         ) : orders.length === 0 ? (
           <div className="p-12 text-center">
-            <p className="text-dark-400">No printed orders found.</p>
+            <p className="text-dark-400">No orders in transit.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <button
-                  onClick={handlePrintSelected}
-                  disabled={selectedOrderIds.size === 0}
-                  className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
-                >
-                  Print Selected ({selectedOrderIds.size})
-                </button>
                 <button
                   onClick={handleMarkAsDelivered}
                   disabled={selectedOrderIds.size === 0}
@@ -632,6 +539,7 @@ export default function Printed() {
                   <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Customer</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Location</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Price</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Parcel ID</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
@@ -661,6 +569,9 @@ export default function Printed() {
                     <td className="px-6 py-4">
                       <span className="text-dark-300 font-medium">৳{order.price || '0'}</span>
                       <p className="text-xs text-dark-400">{order.payment_type}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <code className="bg-dark-700 px-2 py-1 rounded text-sm text-primary-400">{order.courier_parcel_id}</code>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-3">
@@ -705,9 +616,9 @@ export default function Printed() {
                           </span>
                         </button>
                         <button
-                          onClick={async () => {
+                          onClick={() => {
                             try {
-                              const mediaRes = await mediaApi.getAll(order.id)
+                              const mediaRes = mediaApi.getAll(order.id)
                               setOrderMedia(mediaRes.data)
                               setEditingOrder(order)
                             } catch (error) {
@@ -725,32 +636,6 @@ export default function Printed() {
                             Media
                           </span>
                         </button>
-                        <Link
-                          to={`/orders`}
-                          className="group relative p-2 bg-dark-700/50 hover:bg-dark-600/50 text-dark-400 hover:text-dark-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
-                          title="Full List"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                          </svg>
-                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                            Full List
-                          </span>
-                        </Link>
-                        {!order.courier_parcel_id && (
-                          <button
-                            onClick={(e) => sendToSteadfast(order.id, e)}
-                            className="group relative p-2 bg-accent-orange/10 hover:bg-accent-orange/20 text-accent-orange hover:text-orange-400 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
-                            title="Send to Steadfast"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 18h.01" />
-                            </svg>
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                              Steadfast
-                            </span>
-                          </button>
-                        )}
                         <button
                           onClick={() => handleDeleteOrder(order.id)}
                           className="group relative p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
@@ -780,17 +665,6 @@ export default function Printed() {
         </div>
       )}
 
-      {/* Media Modal */}
-      {orderMedia && (
-        <MediaModal
-          files={orderMedia}
-          onClose={() => {
-            setOrderMedia(null)
-            setEditingOrder(null)
-          }}
-        />
-      )}
-
       {/* Quick Action Modal */}
       {showModal && editingOrder && (
         <QuickActionModal
@@ -800,6 +674,17 @@ export default function Printed() {
             setEditingOrder(null)
           }}
           onUpdate={handleUpdateStatus}
+        />
+      )}
+
+      {/* Media Modal */}
+      {orderMedia && (
+        <MediaModal
+          files={orderMedia}
+          onClose={() => {
+            setOrderMedia(null)
+            setEditingOrder(null)
+          }}
         />
       )}
 

@@ -33,7 +33,7 @@ class Order(db.Model):
     district = db.Column(db.String(100), nullable=False)
     upazila_zone = db.Column(db.String(100), nullable=False)
     address = db.Column(db.Text, nullable=True)  # Full address
-    description = db.Column(db.Text, nullable=False)
+    description = db.Column(db.Text, nullable=True)
     price = db.Column(db.Float, nullable=True)  # Price for COD/Prepaid
     payment_type = db.Column(db.Enum('COD', 'Prepaid', name='payment_type_enum'), nullable=False, default='COD')
     courier_parcel_id = db.Column(db.String(100), nullable=True)
@@ -102,6 +102,7 @@ class OrderItem(db.Model):
     size = db.Column(db.String(20), nullable=False)  # e.g., S, M, L, XL, XXL
     quantity = db.Column(db.Integer, nullable=False, default=1)
     position = db.Column(db.Integer, nullable=True)  # For ordering items within an order
+    note = db.Column(db.Text, nullable=True)  # Optional note/description for the item
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -119,6 +120,7 @@ class OrderItem(db.Model):
             'size': self.size,
             'quantity': self.quantity,
             'position': self.position,
+            'note': self.note,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

@@ -7,11 +7,16 @@ import Orders from './pages/Orders'
 import ReadyToPrint from './pages/ReadyToPrint'
 import DesignPending from './pages/DesignPending'
 import ReadyToSubmit from './pages/ReadyToSubmit'
+import InTransit from './pages/InTransit'
+import Delivered from './pages/Delivered'
+import Returned from './pages/Returned'
 import Analytics from './pages/Analytics'
 import Users from './pages/Users'
 import Profile from './pages/Profile'
 import TaskBoard from './pages/TaskBoard'
 import Settings from './pages/Settings'
+import OrderCreate from './pages/OrderCreate'
+import OrderView from './pages/OrderView'
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuth()
@@ -70,9 +75,15 @@ function AppRoutes() {
       >
         <Route index element={<Dashboard />} />
         <Route path="orders" element={<Orders />} />
+        <Route path="orders/create" element={<OrderCreate />} />
+        <Route path="orders/:id/edit" element={<OrderCreate />} />
+        <Route path="orders/:id" element={<OrderView />} />
         <Route path="ready-to-print" element={<ReadyToPrint />} />
         <Route path="design-pending" element={<DesignPending />} />
         <Route path="ready-to-submit" element={<ReadyToSubmit />} />
+        <Route path="in-transit" element={<InTransit />} />
+        <Route path="delivered" element={<Delivered />} />
+        <Route path="returned" element={<Returned />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="users" element={<Users />} />
         <Route path="profile" element={<Profile />} />

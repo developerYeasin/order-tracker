@@ -2,83 +2,98 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { DIVISION_OPTIONS, getDistrictsByDivision, getUpazilasByDistrict, DISTRICT_OPTIONS } from '../constants/locations'
 import { mediaApi, ordersApi } from '../services/api'
 import SearchableSelect from './SearchableSelect'
+import { ModalSkeleton } from './ui/Skeleton'
+
+const TABS = [
+  { id: 'info', label: 'Information', icon: 'info' },
+  { id: 'items', label: 'Items', icon: 'clipboard' },
+  { id: 'attachments', label: 'Attachments', icon: 'paperclip' },
+]
+
+const ModernButton = ({ children, onClick, variant = 'primary', className = '', disabled = false, loading = false }) => {
+  const variants = {
+    primary: 'bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white shadow-lg shadow-primary-500/25 hover:shadow-glow',
+    secondary: 'bg-gradient-to-r from-dark-700 to-dark-600 hover:from-dark-600 hover:to-dark-500 text-white shadow-sm',
+    danger: 'bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white shadow-lg shadow-red-500/25',
+    success: 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-lg shadow-emerald-500/25',
+    outline: 'border-2 border-primary-500/50 text-primary-300 hover:bg-primary-500/10',
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || loading}
+      className={`px-4 py-2.5 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none min-h-[44px] flex items-center justify-center gap-2 ${variants[variant]} ${className}`}
+    >
+      {loading && (
+        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+      )}
+      {children}
+    </button>
+  )
+}
+
+const InfoField = ({ label, value, icon, multiline = false }) => (
+  <div className="group">
+    <p className="text-xs font-semibold text-dark-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+      {icon && (
+        <svg className="w-3.5 h-3.5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      )}
+      {label}
+    </p>
+    {multiline ? (
+      <p className="text-sm text-dark-200 bg-dark-700/50 border border-dark-600/50 rounded-lg p-3 leading-relaxed">
+        {value || '-'}
+      </p>
+    ) : (
+      <p className="text-sm text-dark-200 font-medium bg-dark-700/30 border border-dark-600/30 rounded-lg px-3 py-2 inline-block">
+        {value || '-'}
+      </p>
+    )}
+  </div>
+)
+
+const StatusChecker = ({ label, checked, onChange }) => (
+  <div className="flex items-center justify-between p-3 rounded-xl bg-dark-800/50 border border-dark-700/50 hover:border-primary-500/30 transition-all">
+    <span className="text-sm font-medium text-dark-200">{label}</span>
+    <button
+      type="button"
+      onClick={onChange}
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-dark-800 ${checked ? 'bg-gradient-to-r from-primary-500 to-accent-cyan' : 'bg-dark-600'}`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition-all duration-300 ${checked ? 'translate-x-5' : 'translate-x-0'}`}
+      />
+    </button>
+  </div>
+)
 
 export default function OrderModal({ order, onClose, onSave, loading }) {
+  const [activeTab, setActiveTab] = useState('info')
   const [formData, setFormData] = useState(order || {})
   const [existingMedia, setExistingMedia] = useState([])
   const [newFiles, setNewFiles] = useState([])
   const [items, setItems] = useState(order?.items || [])
-  const [newItem, setNewItem] = useState({ size: 'M', quantity: 1 })
-  const [itemFiles, setItemFiles] = useState({}) // { itemId: { front: File[], back: File[] } }
-  const itemFileRefs = useRef({}) // { [itemId]: { front: ref, back: ref } }
+  const [newItem, setNewItem] = useState({ size: 'M', quantity: 1, note: '' })
+  const [itemFiles, setItemFiles] = useState({})
   const fileInputRef = useRef(null)
   const [districtSearch, setDistrictSearch] = useState('')
   const [upazilaSearch, setUpazilaSearch] = useState('')
 
-  // Debug: Log when component mounts and order prop changes
-  useEffect(() => {
-    console.log('=== OrderModal render ===')
-    console.log('order prop:', order)
-    console.log('order?.id:', order?.id)
-    console.log('order?.media:', order?.media)
-    console.log('order?.items:', order?.items)
-    console.log('existingMedia state:', existingMedia)
-  })
-
-  // Load order data (media and items) when order changes
-  useEffect(() => {
-    console.log('Order useEffect triggered. order:', order?.id)
-    if (order) {
-      // Set media from order (already loaded via get order API)
-      const media = order.media || []
-      console.log('Setting existingMedia to:', media)
-      setExistingMedia(media)
-      // Set items from order
-      const orderItems = order.items || []
-      console.log('Setting items to:', orderItems)
-      setItems(orderItems)
-    } else {
-      setExistingMedia([])
-      setItems([])
-    }
-  }, [order])
-
-  // Computed: districts filtered by form division_id
-  const filteredDistricts = useMemo(() => {
-    if (!formData.division_id) return []
-    return getDistrictsByDivision(formData.division_id)
-  }, [formData.division_id])
-
-  // Computed: upazilas filtered by selected district_id
-  const filteredUpazilas = useMemo(() => {
-    if (!formData.district_id) return []
-    return getUpazilasByDistrict(formData.district_id)
-  }, [formData.district_id])
-
-  // Prevent body scroll when modal is open
-  useEffect(() => {
-    const originalOverflow = document.body.style.overflow
-    const originalPaddingRight = document.body.style.paddingRight
-    document.body.style.overflow = 'hidden'
-    document.body.style.paddingRight = '0' // Prevent scrollbar jump
-    return () => {
-      document.body.style.overflow = originalOverflow
-      document.body.style.paddingRight = originalPaddingRight
-    }
-  }, [])
-
+  // Load order data when order changes
   useEffect(() => {
     if (order) {
-      console.log('Setting existingMedia from order.media:', order.media)
-      // Convert division name to ID
       const division = DIVISION_OPTIONS.find(div => div.name === order.division)
       const divisionId = division?.id || ''
 
-      // Find district ID from name (look through all districts)
       const district = DISTRICT_OPTIONS.find(d => d.name === order.district)
       const districtId = district?.id || ''
 
-      // Find upazila ID from name
       let upazilaId = ''
       if (districtId) {
         const upazilas = getUpazilasByDistrict(districtId)
@@ -93,14 +108,25 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
         upazila_id: upazilaId,
       })
 
-      // Set media from order (already loaded via get order API)
       setExistingMedia(order.media || [])
-      console.log('Media state updated:', order.media || [])
+      setItems(order.items || [])
     } else {
       setFormData({})
       setExistingMedia([])
+      setItems([])
     }
   }, [order])
+
+  // Computed districts and upazilas
+  const filteredDistricts = useMemo(() => {
+    if (!formData.division_id) return []
+    return getDistrictsByDivision(formData.division_id)
+  }, [formData.division_id])
+
+  const filteredUpazilas = useMemo(() => {
+    if (!formData.district_id) return []
+    return getUpazilasByDistrict(formData.district_id)
+  }, [formData.district_id])
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -111,7 +137,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
     const files = e.target.files
     if (files) {
       const validFiles = []
-      const maxSize = 16 * 1024 * 1024 // 16MB
+      const maxSize = 16 * 1024 * 1024
       const allowedTypes = [
         'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
         'video/mp4', 'video/mov', 'video/avi', 'video/mkv', 'video/wmv',
@@ -127,7 +153,6 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
           continue
         }
         if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-          // For unknown types, we'll still allow but show warning? Let's be strict.
           alert(`File type "${file.type}" not allowed for "${file.name}". Skipping.`)
           continue
         }
@@ -135,82 +160,52 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
       }
 
       setNewFiles(prev => [...prev, ...validFiles])
-      // Reset input so same file can be selected again if needed
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
     }
   }
 
-  const handlePaste = (e) => {
-    e.preventDefault()
-    const items = (e.clipboardData || e.originalEvent.clipboardData).items
+  const handleItemFileChange = async (itemId, side, files) => {
+    const newFilesArray = Array.from(files)
     const validFiles = []
-    const maxSize = 16 * 1024 * 1024 // 16MB
-    const allowedTypes = [
-      'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
-      'video/mp4', 'video/mov', 'video/avi', 'video/mkv', 'video/wmv',
-      'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/plain',
-      'application/zip', 'application/x-zip-compressed', 'application/x-7z-compressed', 'application/x-rar-compressed'
-    ]
+    const maxSize = 16 * 1024 * 1024
+    for (const file of newFilesArray) {
+      if (file.size > maxSize) {
+        alert(`File "${file.name}" exceeds 16MB limit. Skipping.`)
+        continue
+      }
+      validFiles.push(file)
+    }
+    if (validFiles.length === 0) return
 
-    for (const item of items) {
-      if (item.type.startsWith('image/') || item.type.startsWith('video/')) {
-        const file = item.getAsFile()
-        if (file) {
-          if (file.size > maxSize) {
-            alert(`File "${file.name}" exceeds 16MB limit. Skipping.`)
-            continue
-          }
-          if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-            alert(`File type "${file.type}" not allowed for "${file.name}". Skipping.`)
-            continue
-          }
-          validFiles.push(file)
+    setItemFiles(prev => {
+      const itemState = prev[itemId] || { front: [], back: [] }
+      return {
+        ...prev,
+        [itemId]: {
+          ...itemState,
+          [side]: [...(itemState[side] || []), ...validFiles]
         }
       }
-    }
+    })
 
-    if (validFiles.length > 0) {
-      setNewFiles(prev => [...prev, ...validFiles])
-    }
-  }
-
-  const handleItemPaste = (itemId, side, e) => {
-    e.preventDefault()
-    const items = (e.clipboardData || e.originalEvent.clipboardData).items
-    const validFiles = []
-    const maxSize = 16 * 1024 * 1024 // 16MB
-    const allowedTypes = [
-      'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
-      'video/mp4', 'video/mov', 'video/avi', 'video/mkv', 'video/wmv',
-      'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetsml.sheet',
-      'text/plain',
-      'application/zip', 'application/x-zip-compressed', 'application/x-7z-compressed', 'application/x-rar-compressed'
-    ]
-
-    for (const item of items) {
-      if (item.type.startsWith('image/') || item.type.startsWith('video/')) {
-        const file = item.getAsFile()
-        if (file) {
-          if (file.size > maxSize) {
-            alert(`File "${file.name}" exceeds 16MB limit. Skipping.`)
-            continue
+    try {
+      await mediaApi.upload(order.id, validFiles, itemId, side)
+      setItemFiles(prev => {
+        const itemState = prev[itemId] || { front: [], back: [] }
+        return {
+          ...prev,
+          [itemId]: {
+            ...itemState,
+            [side]: []
           }
-          if (!allowedTypes.includes(file.type) && !file.type.startsWith('image/') && !file.type.startsWith('video/')) {
-            alert(`File type "${file.type}" not allowed for "${file.name}". Skipping.`)
-            continue
-          }
-          validFiles.push(file)
         }
-      }
-    }
-
-    if (validFiles.length > 0) {
-      handleItemFileChange(itemId, side, validFiles)
+      })
+      await fetchOrderWithItems()
+    } catch (error) {
+      console.error('Upload failed:', error)
+      alert('Upload failed: ' + (error.response?.data?.error || error.message))
     }
   }
 
@@ -228,8 +223,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
     }
   }
 
-  // ========== Items Management ==========
-
+  // Items management
   const handleAddItem = async () => {
     if (!order?.id) {
       alert('Order must be saved before adding items')
@@ -239,8 +233,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
       const res = await ordersApi.createItem(order.id, newItem)
       const createdItem = res.data
       setItems(prev => [...prev, createdItem])
-      setNewItem({ size: 'M', quantity: 1 }) // reset
-      // Initialize empty file arrays for this item
+      setNewItem({ size: 'M', quantity: 1, note: '' })
       setItemFiles(prev => ({ ...prev, [createdItem.id]: { front: [], back: [] } }))
     } catch (error) {
       console.error('Failed to create item:', error)
@@ -259,12 +252,21 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
     }
   }
 
+  const setColor = (itemId, color) => {
+    ordersApi.updateItem(order.id, itemId, { color })
+    setItems((prev) => prev.map((item) => item.id === itemId ? { ...item, color } : item))
+  }
+
+  const setDesign = (itemId, design) => {
+    ordersApi.updateItem(order.id, itemId, { design })
+    setItems((prev) => prev.map((item) => item.id === itemId ? { ...item, design } : item))
+  }
+
   const handleDeleteItem = async (itemId) => {
     if (!confirm('Delete this item?')) return
     try {
       await ordersApi.deleteItem(order.id, itemId)
       setItems(prev => prev.filter(item => item.id !== itemId))
-      // Also remove from itemFiles state
       setItemFiles(prev => {
         const copy = { ...prev }
         delete copy[itemId]
@@ -276,135 +278,37 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
     }
   }
 
-  const handleItemFileChange = async (itemId, side, files) => {
-    const newFilesArray = Array.from(files)
-    const validFiles = []
-    const maxSize = 16 * 1024 * 1024
-    for (const file of newFilesArray) {
-      if (file.size > maxSize) {
-        alert(`File "${file.name}" exceeds 16MB limit. Skipping.`)
-        continue
-      }
-      validFiles.push(file)
-    }
-    if (validFiles.length === 0) return
-
-    // Update state to show preview
-    setItemFiles(prev => {
-      const itemState = prev[itemId] || { front: [], back: [] }
-      return {
-        ...prev,
-        [itemId]: {
-          ...itemState,
-          [side]: [...(itemState[side] || []), ...validFiles]
-        }
-      }
-    })
-
-    // Upload immediately
-    try {
-      await mediaApi.upload(order.id, validFiles, itemId, side)
-      // Clear pending files immediately after successful upload to prevent duplicate preview
-      setItemFiles(prev => {
-        const itemState = prev[itemId] || { front: [], back: [] }
-        return {
-          ...prev,
-          [itemId]: {
-            ...itemState,
-            [side]: []
-          }
-        }
-      })
-      // Refresh items to include new media (purely for updating the UI with the new media)
-      await fetchOrderWithItems()
-      console.log(`Uploaded ${validFiles.length} ${side} images for item ${itemId}`)
-    } catch (error) {
-      console.error(`Upload failed for item ${itemId}:`, error)
-      alert('Upload failed: ' + (error.response?.data?.error || error.message))
-    }
-  }
-
-  const removePendingItemFile = (itemId, side, index) => {
-    setItemFiles(prev => {
-      const itemState = prev[itemId] || { front: [], back: [] }
-      const newFiles = itemState[side].filter((_, i) => i !== index)
-      return {
-        ...prev,
-        [itemId]: { ...itemState, [side]: newFiles }
-      }
-    })
-  }
-
-  const uploadItemFiles = async (itemId, side) => {
-    const files = itemFiles[itemId]?.[side]
-    if (!files || files.length === 0) return
-    try {
-      const uploadResult = await mediaApi.upload(order.id, files, itemId, side)
-      // Add uploaded media to items list
-      const uploadedMedia = uploadResult.data.uploaded || uploadResult.data // depending on API response shape
-      // The API returns list of uploaded file info but we need full media objects including id
-      // Actually our media upload endpoint returns { uploaded: [{filename, file_type, url, item_id, side}] } but doesn't return the media DB objects (id). We need to get the latest media after upload.
-      // Alternative: after upload, we can fetch updated order with items again.
-      await fetchOrderWithItems()
-    } catch (error) {
-      console.error('Failed to upload item files:', error)
-      alert('Upload failed: ' + (error.response?.data?.error || error.message))
-    }
-  }
-
   const removeItemMedia = async (itemId, mediaId) => {
     try {
       await mediaApi.delete(mediaId)
-      // Remove from items state
       setItems(prev =>
         prev.map(item => {
           if (item.id !== itemId) return item
-          // Filter out deleted media from front_images and back_images
           const front = (item.front_images || []).filter(m => m.id !== mediaId)
           const back = (item.back_images || []).filter(m => m.id !== mediaId)
           return { ...item, front_images: front, back_images: back }
         })
       )
     } catch (error) {
-      console.error('Failed to delete item media:', error)
+      console.error('Failed to delete media:', error)
     }
   }
 
-  const fetchOrderWithItems = async (clearSide = null) => {
+  const fetchOrderWithItems = async () => {
     try {
       const res = await ordersApi.getById(order.id, { include_items: true })
       setItems(res.data.items || [])
-      // Also refresh existingMedia (order-level)
       setExistingMedia(res.data.media || [])
-      // Clear pending files for specific item and side if requested (in same batch to avoid duplicate preview)
-      if (clearSide && clearSide.itemId && clearSide.side) {
-        const { itemId, side } = clearSide
-        setItemFiles(prev => {
-          const itemState = prev[itemId] || { front: [], back: [] }
-          return {
-            ...prev,
-            [itemId]: {
-              ...itemState,
-              [side]: []
-            }
-          }
-        })
-      }
     } catch (error) {
       console.error('Failed to refresh order:', error)
     }
   }
 
-  // ========== End Items Management ==========
-
   const handleDownload = (media) => {
-    // Use the backend download endpoint which handles both local and Cloudinary files
     const downloadUrl = `/api/media/${media.id}/download`
-
-    // Create a temporary anchor element - same-origin, so download attribute will work
     const link = document.createElement('a')
     link.href = downloadUrl
-    link.download = ''  // Let backend set filename via Content-Disposition
+    link.download = ''
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -417,24 +321,17 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
       return
     }
 
-    // Convert IDs to names for backend
     const division = DIVISION_OPTIONS.find(div => div.id === formData.division_id)
     const district = DISTRICT_OPTIONS.find(d => d.id === formData.district_id)
     let upazila_zone = ''
 
     if (district) {
       const upazilas = getUpazilasByDistrict(district.id)
-      console.log('DEBUG: upazilas for district', district.id, upazilas.slice(0, 5))
-
-      // Handle both cases: upazila_id could be an ID string or the zone object itself
       if (typeof formData.upazila_id === 'object' && formData.upazila_id !== null) {
-        // It's the zone object directly (legacy behavior when zones had no id)
         upazila_zone = formData.upazila_id.name || ''
-        console.log('DEBUG: upazila_id is object, using name:', upazila_zone)
       } else if (formData.upazila_id) {
         const upazila = upazilas.find(u => u.id === formData.upazila_id)
         upazila_zone = upazila?.name || ''
-        console.log('DEBUG: selected upazila_id:', formData.upazila_id, 'found upazila:', upazila, 'zone:', upazila_zone)
       }
     }
 
@@ -445,662 +342,673 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
       district: district?.name || '',
       upazila_zone,
     }
-    // Remove ID fields before sending
     delete orderPayload.division_id
     delete orderPayload.district_id
     delete orderPayload.upazila_id
 
-    console.log('DEBUG: orderPayload being sent:', orderPayload)
     await onSave(orderPayload)
     setNewFiles([])
-    // Parent will update order prop which triggers effect to refresh media
   }
 
   if (!order) return null
 
+  const tabs = [
+    { id: 'info', label: 'Information', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
+    { id: 'items', label: 'Items', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
+    { id: 'attachments', label: 'Attachments', icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' },
+  ]
+
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-dark-800 rounded-lg border border-dark-700 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex justify-between items-center p-6 border-b border-dark-700">
-          <h2 className="text-xl font-bold text-white">
-            Order #{order.id}
-          </h2>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in" onClick={onClose}>
+      <div
+        className="bg-gradient-to-br from-dark-800 to-dark-900 rounded-3xl border-2 border-dark-700/50 w-full max-w-6xl max-h-[90vh] overflow-hidden shadow-2xl animate-scale-in flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex justify-between items-center p-6 border-b-2 border-dark-700/50 bg-gradient-to-r from-dark-800 to-dark-900/50">
+          <div>
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-white to-dark-300 bg-clip-text text-transparent">
+              Order #{order.id}
+            </h2>
+            <p className="text-sm text-dark-400 mt-1">
+              {new Date(order.created_at).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
+          </div>
           <button
             onClick={onClose}
-            className="text-dark-400 hover:text-white"
+            className="text-dark-400 hover:text-white p-3 hover:bg-dark-700/50 rounded-xl transition-all duration-300 hover:rotate-90 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
-          {/* Debug panel */}
-          <div className="bg-dark-900 border border-dark-700 rounded p-3 mb-4 text-xs">
-            <details>
-              <summary className="cursor-pointer text-dark-300">Debug Info</summary>
-              <pre className="mt-2 overflow-auto text-dark-400">
-{JSON.stringify({
-  orderId: order?.id,
-  hasMediaProp: !!order?.media,
-  mediaCount: order?.media?.length,
-  existingMediaCount: existingMedia.length,
-  mediaItems: existingMedia
-}, null, 2)}
-              </pre>
-            </details>
-          </div>
+        {/* Tabs */}
+        <div className="border-b-2 border-dark-700/50 bg-dark-800/50">
+          <nav className="flex gap-1 p-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                  activeTab === tab.id
+                    ? 'bg-gradient-to-r from-primary-600 to-primary-500 text-white shadow-lg shadow-primary-500/30'
+                    : 'text-dark-400 hover:text-white hover:bg-dark-700/50'
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={tab.icon} />
+                </svg>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
 
-          <form id="order-form" onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Customer Name
-                </label>
-                <input
-                  type="text"
-                  name="customer_name"
-                  value={formData.customer_name || ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Phone Number
-                </label>
-                <input
-                  type="text"
-                  name="phone_number"
-                  value={formData.phone_number || ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Division
-                </label>
-                <SearchableSelect
-                  options={DIVISION_OPTIONS}
-                  value={formData.division_id || ''}
-                  onChange={(value) => {
-                    setFormData({ ...formData, division_id: value, district_id: '', upazila_id: '' })
-                    setDistrictSearch('')
-                    setUpazilaSearch('')
-                  }}
-                  placeholder="Select Division"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  District
-                </label>
-                <SearchableSelect
-                  options={filteredDistricts}
-                  value={formData.district_id || ''}
-                  onChange={(value) => {
-                    setFormData({ ...formData, district_id: value, upazila_id: '' })
-                    setUpazilaSearch('')
-                  }}
-                  placeholder="Select District"
-                  isDisabled={!formData.division_id}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Thana
-                </label>
-                <SearchableSelect
-                  options={filteredUpazilas}
-                  value={formData.upazila_id || ''}
-                  onChange={(value) => setFormData({ ...formData, upazila_id: value })}
-                  placeholder="Select Thana"
-                  isDisabled={!formData.district_id}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Address
-                </label>
-                <textarea
-                  name="address"
-                  value={formData.address || ''}
-                  onChange={handleChange}
-                  rows="3"
-                  placeholder="Full delivery address"
-                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation resize-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Payment Type
-                </label>
-                <select
-                  name="payment_type"
-                  value={formData.payment_type || ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation"
-                >
-                  <option value="COD">Cash on Delivery</option>
-                  <option value="Prepaid">Prepaid</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Courier Parcel ID
-                </label>
-                <input
-                  type="text"
-                  name="courier_parcel_id"
-                  value={formData.courier_parcel_id || ''}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Price (৳)
-                </label>
-                <input
-                  type="text"
-                  name="price"
-                  value={formData.price || ''}
-                  onChange={handleChange}
-                  placeholder="0.00"
-                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Description
-                </label>
-                <textarea
-                  name="description"
-                  value={formData.description || ''}
-                  onChange={handleChange}
-                  rows="4"
-                  className="w-full px-4 py-3 md:py-2 bg-dark-700 border border-dark-600 rounded-lg text-base md:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary-500 touch-manipulation resize-none"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-dark-300 mb-2">
-                  Attachments (Images, Videos, Files)
-                </label>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+          {activeTab === 'info' && (
+            <form onSubmit={handleSubmit} className="space-y-8">
+              {/* Customer Information */}
+              <div className="bg-dark-800/50 border-2 border-dark-700/50 rounded-xl p-4 shadow-lg">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-2 bg-gradient-to-br from-primary-500/20 to-primary-500/5 rounded-lg border border-primary-500/20">
+                    <svg className="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-bold text-white">Customer Information</h3>
+                </div>
 
-                {/* Drag and drop zone */}
-                <button
-                  type="button"
-                  tabIndex={0}
-                  className="border-2 border-dashed border-dark-600 rounded-lg p-6 text-center hover:border-primary-500 transition-colors cursor-pointer focus:outline-none focus:border-primary-500 w-full"
-                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary-500') }}
-                  onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-primary-500') }}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    e.currentTarget.classList.remove('border-primary-500')
-                    const files = Array.from(e.dataTransfer.files)
-                    setNewFiles(prev => [...prev, ...files])
-                  }}
-                  onPaste={handlePaste}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.mp4,.mov,.avi,.mkv,.wmv,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar,.7z"
-                    onChange={handleFileChange}
-                    className="hidden"
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-dark-300">Customer Name *</label>
+                    <input
+                      type="text"
+                      name="customer_name"
+                      value={formData.customer_name || ''}
+                      onChange={handleChange}
+                      required
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-dark-300">Phone Number *</label>
+                    <input
+                      type="text"
+                      name="phone_number"
+                      value={formData.phone_number || ''}
+                      onChange={handleChange}
+                      required
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-dark-300">Division *</label>
+                    <SearchableSelect
+                      options={DIVISION_OPTIONS}
+                      value={formData.division_id || ''}
+                      onChange={(value) => setFormData({ ...formData, division_id: value, district_id: '', upazila_id: '' })}
+                      placeholder="Select Division"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-dark-300">District *</label>
+                    <SearchableSelect
+                      options={filteredDistricts}
+                      value={formData.district_id || ''}
+                      onChange={(value) => setFormData({ ...formData, district_id: value, upazila_id: '' })}
+                      placeholder="Select District"
+                      isDisabled={!formData.division_id}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-dark-300">Thana / Upazila *</label>
+                    <SearchableSelect
+                      options={filteredUpazilas}
+                      value={formData.upazila_id || ''}
+                      onChange={(value) => setFormData({ ...formData, upazila_id: value })}
+                      placeholder="Select Thana"
+                      isDisabled={!formData.district_id}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-dark-300">Payment Type</label>
+                    <select
+                      name="payment_type"
+                      value={formData.payment_type || ''}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                    >
+                      <option value="">Select Payment Type</option>
+                      <option value="COD">Cash on Delivery</option>
+                      <option value="Prepaid">Prepaid</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-2 space-y-2">
+                    <label className="text-sm font-semibold text-dark-300">Delivery Address</label>
+                    <textarea
+                      name="address"
+                      value={formData.address || ''}
+                      onChange={handleChange}
+                      rows="3"
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all resize-none"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-dark-300">Courier Parcel ID</label>
+                    <input
+                      type="text"
+                      name="courier_parcel_id"
+                      value={formData.courier_parcel_id || ''}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-dark-300">Price (৳)</label>
+                    <input
+                      type="text"
+                      name="price"
+                      value={formData.price || ''}
+                      onChange={handleChange}
+                      placeholder="0.00"
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2 space-y-2">
+                    <label className="text-sm font-semibold text-dark-300">Description</label>
+                    <textarea
+                      name="description"
+                      value={formData.description || ''}
+                      onChange={handleChange}
+                      rows="4"
+                      required
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Order Status */}
+              <div className="bg-dark-800/50 border-2 border-dark-700/50 rounded-xl p-4 shadow-lg">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-2 bg-gradient-to-br from-accent-purple/20 to-accent-purple/5 rounded-lg border border-accent-purple/20">
+                    <svg className="w-5 h-5 text-accent-purple" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-bold text-white">Order Status</h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <StatusChecker
+                    label="Design Ready"
+                    checked={formData.status?.design_ready || false}
+                    onChange={() => setFormData({
+                      ...formData,
+                      status: { ...formData.status, design_ready: !(formData.status?.design_ready) }
+                    })}
                   />
-                  <svg className="w-12 h-12 text-dark-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  <p className="text-dark-300 text-sm">Click or drag files here to upload</p>
-                  <p className="text-xs text-dark-400 mt-1">
-                    Images, videos, documents (Max 16MB per file)
-                  </p>
-                </button>
-                <p className="text-xs text-dark-500 mt-1">Tip: You can paste images (Ctrl+V) directly into the drop zone</p>
-
-                {/* New files preview */}
-                {newFiles.length > 0 && (
-                  <div className="mt-4">
-                    <p className="text-sm text-dark-300 mb-2">New Files ({newFiles.length}):</p>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {newFiles.map((file, index) => (
-                        <div key={`new-${index}`} className="bg-dark-900 rounded-lg overflow-hidden border border-dark-700 relative group">
-                          {file.type.startsWith('image/') ? (
-                            <img
-                              src={URL.createObjectURL(file)}
-                              alt={file.name}
-                              className="w-full h-32 object-cover"
-                              onLoad={(e) => URL.revokeObjectURL(e.target.src)}
-                            />
-                          ) : file.type.startsWith('video/') ? (
-                            <div className="w-full h-32 bg-dark-700 flex items-center justify-center">
-                              <svg className="w-12 h-12 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                          ) : (
-                            <div className="w-full h-32 bg-dark-700 flex items-center justify-center">
-                              <svg className="w-12 h-12 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                            </div>
-                          )}
-                          <div className="p-2">
-                            <p className="text-xs text-dark-300 truncate" title={file.name}>{file.name}</p>
-                            <p className="text-xs text-dark-500">{(file.size / 1024).toFixed(1)} KB</p>
-                          </div>
-                          {!loading && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                removeNewFile(index)
-                              }}
-                              className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Remove file"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                  <StatusChecker
+                    label="Printed"
+                    checked={formData.status?.is_printed || false}
+                    onChange={() => setFormData({
+                      ...formData,
+                      status: { ...formData.status, is_printed: !(formData.status?.is_printed) }
+                    })}
+                  />
+                  <StatusChecker
+                    label="Picking Done"
+                    checked={formData.status?.picking_done || false}
+                    onChange={() => setFormData({
+                      ...formData,
+                      status: { ...formData.status, picking_done: !(formData.status?.picking_done) }
+                    })}
+                  />
+                  <div className="p-4 rounded-xl bg-dark-800/50 border-2 border-dark-700/50">
+                    <p className="text-sm font-semibold text-dark-300 mb-2">Delivery Status</p>
+                    <select
+                      value={formData.status?.delivery_status || ''}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        status: { ...formData.status, delivery_status: e.target.value }
+                      })}
+                      className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                      <option value="">Select Status</option>
+                      <option value="Submitted">Submitted</option>
+                      <option value="Delivered">Delivered</option>
+                      <option value="Returned">Returned</option>
+                    </select>
                   </div>
-                )}
-
-                {/* Existing media files */}
-                {existingMedia.length > 0 ? (
-                  <div className="mt-4">
-                    <p className="text-sm text-dark-300 mb-2">Current Attachments ({existingMedia.length}):</p>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                      {existingMedia.map((media) => (
-                        <div key={media.id} className="bg-dark-900 rounded-lg overflow-hidden border border-dark-700 relative group">
-                          {media.file_type === 'Image' ? (
-                            <div className="relative">
-                              <img
-                                src={media.file_url}
-                                alt="Order attachment"
-                                className="w-full h-32 object-cover cursor-pointer"
-                                onClick={() => window.open(media.file_url, '_blank')}
-                              />
-                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    window.open(media.file_url, '_blank')
-                                  }}
-                                  className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2"
-                                  title="View"
-                                >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                  </svg>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleDownload(media)
-                                  }}
-                                  className="bg-green-500 hover:bg-green-600 text-white rounded-full p-2"
-                                  title="Download"
-                                >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          ) : media.file_type === 'Video' ? (
-                            <div className="relative">
-                              <video
-                                src={media.file_url}
-                                className="w-full h-32 object-cover cursor-pointer"
-                                controls
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  window.open(media.file_url, '_blank')
-                                }}
-                              />
-                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    window.open(media.file_url, '_blank')
-                                  }}
-                                  className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2"
-                                  title="Open in new tab"
-                                >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="relative">
-                              <div className="w-full h-32 bg-dark-700 flex items-center justify-center">
-                                <svg className="w-12 h-12 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                              </div>
-                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    window.open(media.file_url || media.file_path, '_blank')
-                                  }}
-                                  className="bg-blue-500 hover:bg-blue-600 text-white rounded-full p-2"
-                                  title="View"
-                                >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                  </svg>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleDownload(media)
-                                  }}
-                                  className="bg-green-500 hover:bg-green-600 text-white rounded-full p-2"
-                                  title="Download"
-                                >
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                          <div className="p-2">
-                            <p className="text-xs text-dark-300 truncate" title={media.file_path || media.file_url}>
-                              {media.file_path?.split('/')?.pop() || media.file_url?.split('/')?.pop() || 'File'}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-4 p-4 border border-dark-600 rounded-lg">
-                    <p className="text-sm text-dark-400">
-                      No attachments for this order.
-                    </p>
-                  </div>
-                )}
-
-                <p className="text-xs text-dark-400 mt-2">
-                  Supported: Images (JPG, PNG, GIF, WebP), Videos (MP4, MOV, AVI), Documents (PDF, DOC, ZIP). Max 16MB per file.
-                </p>
+                </div>
               </div>
-            </div>
+            </form>
+          )}
 
-            {/* ========== Order Items Section ========== */}
-            <div className="md:col-span-2 border-t border-dark-700 pt-4">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-white">Order Items</h3>
+          {activeTab === 'items' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold text-white">Order Items ({items.length})</h3>
                 <button
                   type="button"
                   onClick={handleAddItem}
                   disabled={!order?.id}
-                  className="px-3 py-1 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-800 text-white text-sm rounded"
+                  className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-xl font-semibold shadow-lg shadow-emerald-500/30 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  + Add Item
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Item
                 </button>
               </div>
 
               {items.length === 0 ? (
-                <p className="text-dark-400 text-sm">No items yet. Add an item to specify t-shirt sizes and upload design images.</p>
+                <div className="text-center py-8 bg-dark-800/50 border-2 border-dashed border-dark-600/50 rounded-xl">
+                  <p className="text-dark-400">No items yet. Add an item to specify t-shirt sizes.</p>
+                </div>
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-3">
                   {items.map((item) => (
-                    <div key={item.id} className="bg-dark-900 border border-dark-700 rounded-lg p-4">
-                      <div className="flex flex-wrap items-center gap-4 mb-4">
-                        <div className="flex items-center gap-2">
-                          <label className="text-sm text-dark-300">Size:</label>
+                    <div key={item.id} className="bg-dark-800/50 border-2 border-dark-700/50 rounded-xl p-4 shadow-lg">
+                      <div className="flex flex-wrap gap-3 items-center mb-3">
+                        <div className="flex items-center gap-3">
+                          <label className="text-sm font-semibold text-dark-300">Size:</label>
                           <select
                             value={item.size || ''}
                             onChange={(e) => handleUpdateItem(item.id, { size: e.target.value })}
-                            className="bg-dark-700 border border-dark-600 rounded text-white text-sm px-2 py-1"
+                            className="px-4 py-2.5 bg-dark-700/80 border-2 border-dark-600 rounded-lg text-white focus:ring-2 focus:ring-primary-500"
                           >
                             {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Free Size'].map((sz) => (
                               <option key={sz} value={sz}>{sz}</option>
                             ))}
                           </select>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <label className="text-sm text-dark-300">Qty:</label>
+
+                        <div className="flex items-center gap-3">
+                          <label className="text-sm font-semibold text-dark-300">Quantity:</label>
                           <input
                             type="number"
                             min="1"
                             value={item.quantity || 1}
-                            onChange={(e) => {
-                              const qty = parseInt(e.target.value) || 1
-                              handleUpdateItem(item.id, { quantity: qty })
-                            }}
-                            className="bg-dark-700 border border-dark-600 rounded text-white text-sm w-16 px-2 py-1"
+                            onChange={(e) => handleUpdateItem(item.id, { quantity: parseInt(e.target.value) || 1 })}
+                            className="w-20 px-4 py-2.5 bg-dark-700/80 border-2 border-dark-600 rounded-lg text-white focus:ring-2 focus:ring-primary-500"
                           />
                         </div>
-                        <div className="text-xs text-dark-400">
-                          Position: {item.position !== null && item.position !== undefined ? item.position : '—'}
+
+                        <div className="flex items-center gap-3">
+                          <label className="text-sm font-semibold text-dark-300">Color:</label>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setColor(item.id, 'white')}
+                              className={`px-4 py-2.5 rounded-lg font-medium border-2 transition-all ${item.color === 'white' ? 'bg-white border-yellow-500 text-white ring-2 ring-white ring-offset-2 ring-offset-dark-800' : 'bg-dark-700/80 border-dark-600 text-dark-300 hover:border-dark-500'}`}
+                            >
+                              White
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setColor(item.id, 'black')}
+                              className={`px-4 py-2.5 rounded-lg font-medium border-2 transition-all ${item.color === 'black' ? 'bg-black border-yellow-500 text-white ring-2 ring-black ring-offset-2 ring-offset-dark-800' : 'bg-dark-700/80 border-dark-600 text-dark-300 hover:border-dark-500'}`}
+                            >
+                              Black
+                            </button>
+                          </div>
+
+                          <label className="text-sm font-semibold text-dark-300">Design:</label>
+                          <select
+                            value={item.design || 'both'}
+                            onChange={(e) => setDesign(item.id, e.target.value)}
+                            className="px-4 py-2.5 bg-dark-700/80 border-2 border-dark-600 rounded-lg text-white focus:ring-2 focus:ring-primary-500"
+                          >
+                            <option value="front">Front</option>
+                            <option value="back">Back</option>
+                            <option value="both">Both</option>
+                          </select>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteItem(item.id)}
-                          className="ml-auto text-red-400 hover:text-red-300 text-sm"
-                        >
-                          Delete
-                        </button>
+
+                        <div className="ml-auto">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteItem(item.id)}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl font-medium transition-all hover:scale-105 flex items-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Front Images */}
-                      <div className="mb-4">
-                        <div
-                          tabIndex={0}
-                          className="flex items-center justify-between mb-2 cursor-pointer focus:outline-none"
-                          onPaste={(e) => handleItemPaste(item.id, 'front', e)}
-                        >
-                          <h4 className="text-sm font-medium text-dark-300">Front Design Images</h4>
-                          <input
-                            type="file"
-                            multiple
-                            accept="image/*"
-                            onChange={(e) => {
-                              handleItemFileChange(item.id, 'front', e.target.files)
-                              e.target.value = '' // reset
-                            }}
-                          />
+                      <div className="space-y-4">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-semibold text-dark-300 flex items-center gap-2">
+                              <svg className="w-4 h-4 text-accent-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.236 13.086a2 2 0 012.736.014l5.532 4.933a2 2 0 010 3.136l-1.762 5.193a2 2 0 01-1.736 1.25l3.523 1.148a2 2 0 01-.31 1.428l-5.2 1.32a2 2 0 01-1.248-.178l-2.594-2.95a2 2 0 01-.859-.682l-1.377-4.18a2 2 0 01-.782-1.464z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              Front Design Images
+                            </h4>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {(item.front_images || []).map((media) => (
+                              <div key={media.id} className="relative bg-dark-900 rounded-xl overflow-hidden border-2 border-dark-700 group hover:border-primary-500/50 transition-all">
+                                <img src={media.file_url} alt="front" className="w-full h-32 object-cover" />
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => window.open(media.file_url, '_blank')}
+                                    className="bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full shadow-lg"
+                                    title="View"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeItemMedia(item.id, media.id)}
+                                    className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-full shadow-lg"
+                                    title="Delete"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <p className="text-xs text-dark-500 mb-2">Tip: You can paste images (Ctrl+V) directly here</p>
-                        {/* Pending uploads for front */}
-                        {(itemFiles[item.id]?.front?.length > 0) && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-                            {itemFiles[item.id].front.map((file, idx) => (
-                              <div key={idx} className="relative bg-dark-800 rounded border border-dark-700 overflow-hidden">
-                                <img src={URL.createObjectURL(file)} alt="preview" className="w-full h-24 object-cover" onLoad={(e) => URL.revokeObjectURL(e.target.src)} />
-                                <button
-                                  type="button"
-                                  onClick={() => removePendingItemFile(item.id, 'front', idx)}
-                                  className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                </button>
-                                <div className="text-[10px] text-dark-300 p-1 truncate">{file.name}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {/* Existing front images */}
-                        {(item.front_images || []).length > 0 && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-                            {item.front_images.map((media) => (
-                              <div key={media.id} className="relative bg-dark-800 rounded border border-dark-700 overflow-hidden">
-                                <img src={media.file_url} alt="front" className="w-full h-24 object-cover" />
-                                <button
-                                  type="button"
-                                  onClick={() => removeItemMedia(item.id, media.id)}
-                                  className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg"
-                                  title="Remove"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
 
-                      {/* Back Images */}
-                      <div className="mb-2">
-                        <div
-                          tabIndex={0}
-                          className="flex items-center justify-between mb-2 cursor-pointer focus:outline-none"
-                          onPaste={(e) => handleItemPaste(item.id, 'back', e)}
-                        >
-                          <h4 className="text-sm font-medium text-dark-300">Back Design Images</h4>
-                          <input
-                            type="file"
-                            multiple
-                            accept="image/*"
-                            onChange={(e) => {
-                              handleItemFileChange(item.id, 'back', e.target.files)
-                              e.target.value = ''
-                            }}
+                        <div className="space-y-3">
+                          <h4 className="text-sm font-semibold text-dark-300 flex items-center gap-2">
+                            <svg className="w-4 h-4 text-accent-pink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                            </svg>
+                            Back Design Images
+                          </h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {(item.back_images || []).map((media) => (
+                              <div key={media.id} className="relative bg-dark-900 rounded-xl overflow-hidden border-2 border-dark-700 group hover:border-primary-500/50 transition-all">
+                                <img src={media.file_url} alt="back" className="w-full h-32 object-cover" />
+                                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => window.open(media.file_url, '_blank')}
+                                    className="bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full shadow-lg"
+                                    title="View"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeItemMedia(item.id, media.id)}
+                                    className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-full shadow-lg"
+                                    title="Delete"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-semibold text-dark-300">Note (optional)</label>
+                          <textarea
+                            value={item.note || ''}
+                            onChange={(e) => handleUpdateItem(item.id, { note: e.target.value })}
+                            placeholder="Add a note..."
+                            className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:ring-2 focus:ring-primary-500 resize-none"
+                            rows="2"
                           />
                         </div>
-                        <p className="text-xs text-dark-500 mb-2">Tip: You can paste images (Ctrl+V) directly here</p>
-                        {/* Pending uploads for back */}
-                        {(itemFiles[item.id]?.back?.length > 0) && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-                            {itemFiles[item.id].back.map((file, idx) => (
-                              <div key={idx} className="relative bg-dark-800 rounded border border-dark-700 overflow-hidden">
-                                <img src={URL.createObjectURL(file)} alt="preview" className="w-full h-24 object-cover" onLoad={(e) => URL.revokeObjectURL(e.target.src)} />
-                                <button
-                                  type="button"
-                                  onClick={() => removePendingItemFile(item.id, 'back', idx)}
-                                  className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                </button>
-                                <div className="text-[10px] text-dark-300 p-1 truncate">{file.name}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {/* Existing back images */}
-                        {(item.back_images || []).length > 0 && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-                            {item.back_images.map((media) => (
-                              <div key={media.id} className="relative bg-dark-800 rounded border border-dark-700 overflow-hidden">
-                                <img src={media.file_url} alt="back" className="w-full h-24 object-cover" />
-                                <button
-                                  type="button"
-                                  onClick={() => removeItemMedia(item.id, media.id)}
-                                  className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl-lg"
-                                  title="Remove"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Add New Item Form (always visible when there are no items or to add new) */}
               {items.length > 0 && (
-                <div className="mt-4 p-4 border border-dark-600 rounded-lg bg-dark-900">
-                  <h4 className="text-sm font-medium text-dark-300 mb-2">Add Another Item</h4>
-                  <div className="flex flex-wrap gap-2 items-end">
-                    <div>
-                      <label className="block text-xs text-dark-400 mb-1">Size</label>
+                <div className="bg-dark-800/50 border-2 border-primary-500/30 rounded-2xl p-6">
+                  <h4 className="text-lg font-bold text-white mb-4">Add Another Item</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-dark-300">Size</label>
                       <select
                         value={newItem.size}
                         onChange={(e) => setNewItem({ ...newItem, size: e.target.value })}
-                        className="bg-dark-700 border border-dark-600 rounded text-white text-sm px-2 py-1"
+                        className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:ring-2 focus:ring-primary-500"
                       >
                         {['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Free Size'].map((sz) => (
                           <option key={sz} value={sz}>{sz}</option>
                         ))}
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-xs text-dark-400 mb-1">Quantity</label>
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-dark-300">Quantity</label>
                       <input
                         type="number"
                         min="1"
                         value={newItem.quantity}
                         onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) || 1 })}
-                        className="bg-dark-700 border border-dark-600 rounded text-white text-sm w-20 px-2 py-1"
+                        className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:ring-2 focus:ring-primary-500"
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-sm font-semibold text-dark-300">Note (optional)</label>
+                      <textarea
+                        value={newItem.note || ''}
+                        onChange={(e) => setNewItem({ ...newItem, note: e.target.value })}
+                        placeholder="Add a note..."
+                        className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:ring-2 focus:ring-primary-500 resize-none"
+                        rows="1"
                       />
                     </div>
                     <button
                       type="button"
                       onClick={handleAddItem}
-                      className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded"
+                      className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-xl font-semibold shadow-lg shadow-emerald-500/30 transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
                     >
-                      Add
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Add Item
                     </button>
                   </div>
                 </div>
               )}
             </div>
-            {/* ========== End Order Items ========== */}
+          )}
 
-            <div className="border-t border-dark-700 pt-4">
-              <h3 className="text-sm font-medium text-dark-300 mb-2">Current Status</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span className="text-dark-400">Design Ready:</span>{' '}
-                  <span className={order.status?.design_ready ? 'text-green-400' : 'text-red-400'}>
-                    {order.status?.design_ready ? 'Yes' : 'No'}
-                  </span>
+          {activeTab === 'attachments' && (
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-2 bg-gradient-to-br from-accent-cyan/20 to-accent-cyan/5 rounded-lg border border-accent-cyan/20">
+                    <svg className="w-5 h-5 text-accent-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-xl font-bold text-white">Order Attachments</h3>
                 </div>
-                <div>
-                  <span className="text-dark-400">Printed:</span>{' '}
-                  <span className={order.status?.is_printed ? 'text-green-400' : 'text-red-400'}>
-                    {order.status?.is_printed ? 'Yes' : 'No'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-dark-400">Picking Done:</span>{' '}
-                  <span className={order.status?.picking_done ? 'text-green-400' : 'text-red-400'}>
-                    {order.status?.picking_done ? 'Yes' : 'No'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-dark-400">Delivery:</span>{' '}
-                  <span className="text-blue-400">{order.status?.delivery_status || 'Pending'}</span>
+
+                <div className="bg-dark-800/50 border-2 border-primary-500/30 rounded-xl p-4">
+                  <div
+                    className="border-2 border-dashed border-dark-600 hover:border-primary-500 rounded-xl p-8 text-center transition-all duration-300 hover:bg-primary-500/5 cursor-pointer"
+                    onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary-500', 'bg-primary-500/10'); e.currentTarget.classList.remove('border-dark-600') }}
+                    onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-primary-500', 'bg-primary-500/10'); e.currentTarget.classList.add('border-dark-600') }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      e.currentTarget.classList.remove('border-primary-500', 'bg-primary-500/10')
+                      e.currentTarget.classList.add('border-dark-600')
+                      const files = Array.from(e.dataTransfer.files)
+                      setNewFiles(prev => [...prev, ...files])
+                    }}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.mp4,.mov,.avi,.mkv,.wmv,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar,.7z"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <svg className="w-16 h-16 text-dark-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <p className="text-lg font-medium text-dark-300 mb-2">Click or drag files here to upload</p>
+                    <p className="text-sm text-dark-400">Images, videos, documents (Max 16MB per file)</p>
+                    <p className="text-xs text-dark-500 mt-3">Tip: You can paste files (Ctrl+V) directly here</p>
+                  </div>
+
+                  {/* New files preview */}
+                  {newFiles.length > 0 && (
+                    <div className="mt-6">
+                      <p className="text-sm font-semibold text-dark-300 mb-3">New Files ({newFiles.length}):</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {newFiles.map((file, index) => (
+                          <div key={`new-${index}`} className="relative bg-dark-900 rounded-xl overflow-hidden border-2 border-dark-700 group hover:border-primary-500/50 transition-all">
+                            {file.type.startsWith('image/') ? (
+                              <img src={URL.createObjectURL(file)} alt={file.name} className="w-full h-32 object-cover" />
+                            ) : file.type.startsWith('video/') ? (
+                              <div className="w-full h-32 bg-dark-700 flex items-center justify-center">
+                                <svg className="w-12 h-12 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                            ) : (
+                              <div className="w-full h-32 bg-dark-700 flex items-center justify-center">
+                                <svg className="w-12 h-12 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </div>
+                            )}
+                            <div className="p-3 bg-dark-800/90">
+                              <p className="text-xs text-dark-300 truncate">{file.name}</p>
+                              <p className="text-xs text-dark-500">{(file.size / 1024).toFixed(1)} KB</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); removeNewFile(index) }}
+                              className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Remove"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Existing media */}
+                  {existingMedia.length > 0 && (
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-semibold text-dark-300">Current Attachments ({existingMedia.length}):</p>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {existingMedia.map((media) => (
+                          <div key={media.id} className="relative bg-dark-900 rounded-xl overflow-hidden border-2 border-dark-700 group hover:border-primary-500/50 transition-all">
+                            {media.file_type === 'Image' || media.file_type === 'Image/JPEG' || media.file_type === 'Image/PNG' ? (
+                              <img src={media.file_url} alt={media.file_path?.split('/')?.pop()} className="w-full h-32 object-cover cursor-pointer" onClick={() => window.open(media.file_url, '_blank')} />
+                            ) : media.file_type === 'Video' || media.file_type?.startsWith('video/') ? (
+                              <video src={media.file_url} className="w-full h-32 object-cover" controls onClick={(e) => { e.stopPropagation(); window.open(media.file_url, '_blank') }} />
+                            ) : (
+                              <div className="w-full h-32 bg-dark-700 flex items-center justify-center">
+                                <svg className="w-12 h-12 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); window.open(media.file_url, '_blank') }}
+                                className="bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-full shadow-lg"
+                                title="View"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleDownload(media) }}
+                                className="bg-emerald-500 hover:bg-emerald-600 text-white p-2 rounded-full shadow-lg"
+                                title="Download"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                              </button>
+                              {/* Image removal disabled - images cannot be removed once added */}
+                              {/* <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); removeExistingMedia(media.id) }}
+                                className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-full shadow-lg"
+                                title="Delete"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button> */}
+                            </div>
+                            <div className="p-2 bg-dark-800/90">
+                              <p className="text-xs text-dark-300 truncate" title={media.file_path?.split('/')?.pop() || media.file_url?.split('/')?.pop()}>
+                                {media.file_path?.split('/')?.pop() || media.file_url?.split('/')?.pop() || 'File'}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {existingMedia.length === 0 && newFiles.length === 0 && (
+                    <div className="text-center py-8 bg-dark-800/50 border-2 border-dashed border-dark-600/50 rounded-xl">
+                      <p className="text-dark-400">No attachments for this order.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-          </form>
+          )}
         </div>
 
-        <div className="p-6 border-t border-dark-700 bg-dark-800 flex justify-end gap-3">
+        {/* Footer */}
+        <div className="p-6 border-t-2 border-dark-700/50 bg-gradient-to-r from-dark-800 to-dark-900 flex justify-end gap-4">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-3 md:py-2 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors touch-manipulation min-h-[44px]"
             disabled={loading}
+            className="px-8 py-3 bg-gradient-to-r from-dark-700 to-dark-600 hover:from-dark-600 hover:to-dark-500 text-white rounded-xl font-semibold transition-all duration-300 shadow-sm hover:shadow-md disabled:opacity-50 min-h-[44px]"
           >
             Cancel
           </button>
@@ -1108,9 +1016,24 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
             type="submit"
             form="order-form"
             disabled={loading}
-            className="px-4 py-3 md:py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-800 text-white rounded-lg transition-colors touch-manipulation min-h-[44px] text-base md:text-sm"
+            className="px-8 py-3 bg-gradient-to-r from-primary-600 via-primary-500 to-primary-600 hover:from-primary-500 hover:to-primary-400 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-semibold transition-all duration-300 shadow-lg shadow-primary-500/25 hover:shadow-glow hover:scale-105 active:scale-95 min-h-[44px] flex items-center gap-3"
           >
-            {loading ? 'Saving...' : 'Save Changes'}
+            {loading ? (
+              <>
+                <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Saving...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Save Changes
+              </>
+            )}
           </button>
         </div>
       </div>

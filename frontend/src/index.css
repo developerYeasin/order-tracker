@@ -35,3 +35,9 @@ body {
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #64748b;
 }
+
+/* Safe area padding for notched devices */
+@tailwind base;
+.pb-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 1rem);
+}

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { usersApi } from '../services/api'
+import { TableSkeleton } from '../components/ui/Skeleton'
 
 export default function Users() {
   const { user: currentUser, isAdmin, logout } = useAuth()
@@ -80,8 +81,26 @@ export default function Users() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-dark-900">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+      <div className="bg-dark-900 min-h-screen pb-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-white">User Management</h1>
+              <p className="mt-2 text-dark-400">Manage user accounts and permissions</p>
+            </div>
+            <button className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors" disabled>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add User
+            </button>
+          </div>
+          <div className="bg-dark-800 border border-dark-700 rounded-lg shadow-lg overflow-hidden">
+            <div className="p-6">
+              <TableSkeleton rows={8} columns={5} />
+            </div>
+          </div>
+        </div>
       </div>
     )
   }

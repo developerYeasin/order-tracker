@@ -19,7 +19,7 @@ const StatusBadge = ({ status }) => {
   )
 }
 
-export default function Printed() {
+export default function Delivered() {
   const navigate = useNavigate()
   const [orders, setOrders] = useState([])
   const [search, setSearch] = useState('')
@@ -59,7 +59,6 @@ export default function Printed() {
         ? (DISTRICT_OPTIONS.find(d => d.id === selectedDistrict)?.name || '')
         : ''
 
-      // Filter: is_printed = true, no courier_parcel_id, delivery_status not 'Submitted'
       const res = await ordersApi.getAll({
         search,
         division: divisionName,
@@ -67,11 +66,9 @@ export default function Printed() {
         status: '',
       })
 
-      // Filter for: is_printed AND NOT courier_parcel_id AND NOT delivery_status='Submitted'
+      // Filter for: delivery_status === 'Delivered'
       const filtered = res.data.filter(order =>
-        order.status?.is_printed === true &&
-        !order.courier_parcel_id &&
-        order.status?.delivery_status !== 'Submitted'
+        order.status?.delivery_status === 'Delivered'
       )
 
       setOrders(filtered)
@@ -108,28 +105,18 @@ export default function Printed() {
     }
   }
 
-  const handlePrintSelected = () => {
-    if (selectedOrderIds.size === 0) {
-      alert('Please select at least one order to print')
-      return
-    }
-    const orderIds = Array.from(selectedOrderIds).join(',')
-    const printUrl = `/api/orders/print?order_ids=${orderIds}`
-    window.open(printUrl, '_blank')
-  }
-
-  const handleMarkAsDelivered = async () => {
+  const handleMarkAsReturned = async () => {
     if (selectedOrderIds.size === 0) {
       alert('Please select at least one order')
       return
     }
-    if (!confirm(`Mark ${selectedOrderIds.size} order(s) as delivered?`)) return
+    if (!confirm(`Mark ${selectedOrderIds.size} delivered order(s) as Returned?`)) return
 
     try {
       for (const orderId of selectedOrderIds) {
-        await ordersApi.updateStatus(orderId, { delivery_status: 'Delivered' })
+        await ordersApi.updateStatus(orderId, { delivery_status: 'Returned' })
       }
-      showNotification(`${selectedOrderIds.size} order(s) marked as delivered`)
+      showNotification(`${selectedOrderIds.size} order(s) marked as Returned`)
       setSelectedOrderIds(new Set())
       fetchOrders()
     } catch (error) {
@@ -251,7 +238,7 @@ export default function Printed() {
       e.preventDefault()
       const items = (e.clipboardData || e.originalEvent.clipboardData).items
       const validFiles = []
-      const maxSize = 16 * 1024 * 1024 // 16MB
+      const maxSize = 16 * 1024 * 1024
       const allowedTypes = [
         'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/svg+xml',
         'video/mp4', 'video/mov', 'video/avi', 'video/mkv', 'video/wmv',
@@ -529,8 +516,8 @@ export default function Printed() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-white">Printed Orders</h1>
-          <p className="text-dark-400 mt-1">Orders that have been printed but not yet handed to courier</p>
+          <h1 className="text-2xl font-bold text-white">Delivered</h1>
+          <p className="text-dark-400 mt-1">Orders that have been successfully delivered</p>
         </div>
       </div>
 
@@ -585,25 +572,18 @@ export default function Printed() {
           </div>
         ) : orders.length === 0 ? (
           <div className="p-12 text-center">
-            <p className="text-dark-400">No printed orders found.</p>
+            <p className="text-dark-400">No delivered orders found.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <button
-                  onClick={handlePrintSelected}
+                  onClick={handleMarkAsReturned}
                   disabled={selectedOrderIds.size === 0}
-                  className="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
                 >
-                  Print Selected ({selectedOrderIds.size})
-                </button>
-                <button
-                  onClick={handleMarkAsDelivered}
-                  disabled={selectedOrderIds.size === 0}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
-                >
-                  Mark as Delivered ({selectedOrderIds.size})
+                  Mark as Returned ({selectedOrderIds.size})
                 </button>
                 <button
                   onClick={handleSelectAll}
@@ -632,6 +612,7 @@ export default function Printed() {
                   <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Customer</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Location</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Price</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Parcel ID</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
@@ -661,6 +642,9 @@ export default function Printed() {
                     <td className="px-6 py-4">
                       <span className="text-dark-300 font-medium">৳{order.price || '0'}</span>
                       <p className="text-xs text-dark-400">{order.payment_type}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <code className="bg-dark-700 px-2 py-1 rounded text-sm text-primary-400">{order.courier_parcel_id}</code>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-3">
@@ -725,32 +709,6 @@ export default function Printed() {
                             Media
                           </span>
                         </button>
-                        <Link
-                          to={`/orders`}
-                          className="group relative p-2 bg-dark-700/50 hover:bg-dark-600/50 text-dark-400 hover:text-dark-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
-                          title="Full List"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                          </svg>
-                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                            Full List
-                          </span>
-                        </Link>
-                        {!order.courier_parcel_id && (
-                          <button
-                            onClick={(e) => sendToSteadfast(order.id, e)}
-                            className="group relative p-2 bg-accent-orange/10 hover:bg-accent-orange/20 text-accent-orange hover:text-orange-400 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
-                            title="Send to Steadfast"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 18h.01" />
-                            </svg>
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                              Steadfast
-                            </span>
-                          </button>
-                        )}
                         <button
                           onClick={() => handleDeleteOrder(order.id)}
                           className="group relative p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
@@ -780,17 +738,6 @@ export default function Printed() {
         </div>
       )}
 
-      {/* Media Modal */}
-      {orderMedia && (
-        <MediaModal
-          files={orderMedia}
-          onClose={() => {
-            setOrderMedia(null)
-            setEditingOrder(null)
-          }}
-        />
-      )}
-
       {/* Quick Action Modal */}
       {showModal && editingOrder && (
         <QuickActionModal
@@ -800,6 +747,17 @@ export default function Printed() {
             setEditingOrder(null)
           }}
           onUpdate={handleUpdateStatus}
+        />
+      )}
+
+      {/* Media Modal */}
+      {orderMedia && (
+        <MediaModal
+          files={orderMedia}
+          onClose={() => {
+            setOrderMedia(null)
+            setEditingOrder(null)
+          }}
         />
       )}
 

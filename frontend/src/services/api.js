@@ -23,9 +23,9 @@ api.interceptors.request.use(
 
 // Auth API
 export const authApi = {
-  login: (email, password) => api.post('/login', { email, password }),
-  verify: () => api.get('/verify'),
-  logout: () => api.post('/logout'),
+  login: (email, password) => api.post('/auth/login', { email, password }),
+  verify: () => api.get('/auth/verify'),
+  logout: () => api.post('/auth/logout'),
 }
 
 // User Management API (Admin only)

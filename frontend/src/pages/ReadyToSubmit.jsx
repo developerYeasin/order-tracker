@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import { ordersApi, mediaApi } from '../services/api'
 import { DIVISION_OPTIONS, DISTRICT_OPTIONS, getDistrictsByDivision, getUpazilasByDistrict } from '../constants/locations'
-import { Link } from 'react-router-dom'
+import OrderModal from '../components/OrderModal'
+import { TableSkeleton } from '../components/ui/Skeleton'
 
 const StatusBadge = ({ status }) => {
   const statusMap = {
@@ -18,6 +20,7 @@ const StatusBadge = ({ status }) => {
 }
 
 export default function ReadyToSubmit() {
+  const navigate = useNavigate()
   const [orders, setOrders] = useState([])
   const [search, setSearch] = useState('')
   const [selectedDivision, setSelectedDivision] = useState('')
@@ -29,6 +32,8 @@ export default function ReadyToSubmit() {
   const [notification, setNotification] = useState(null)
   const fileInputRef = useRef(null)
   const [selectedOrderIds, setSelectedOrderIds] = useState(new Set())
+  const [showOrderModal, setShowOrderModal] = useState(false)
+  const [orderModalOrder, setOrderModalOrder] = useState(null)
 
   const filteredDistricts = useMemo(() => {
     if (!selectedDivision) return []
@@ -61,11 +66,10 @@ export default function ReadyToSubmit() {
         status: '',
       })
 
-      // Filter for: is_printed AND has courier_parcel_id AND NOT delivery_status='Submitted'
+      // Filter for: (is_printed OR picking_done) AND delivery_status is NULL (ready to submit to courier)
       const filtered = res.data.filter(order =>
-        order.status?.is_printed === true &&
-        order.courier_parcel_id &&
-        order.status?.delivery_status !== 'Submitted'
+        (order.status?.is_printed === true || order.status?.picking_done === true) &&
+        !order.status?.delivery_status
       )
 
       setOrders(filtered)
@@ -131,33 +135,15 @@ export default function ReadyToSubmit() {
     }
   }
 
-  const handleUpdateStatus = async (orderId, statusData, designFiles = null) => {
+  const handleUpdateStatus = async (orderId, statusData) => {
     try {
-      // If there are new design files, upload them first
-      if (designFiles && designFiles.length > 0) {
-        try {
-          await mediaApi.upload(orderId, designFiles)
-        } catch (mediaErr) {
-          console.warn('Design upload failed:', mediaErr)
-          showNotification('Design file upload failed. Please try again.', 'error')
-          return // keep modal open for retry
-        }
-      }
-
-      // Update status only after successful upload (or if no files needed)
       await ordersApi.updateStatus(orderId, statusData)
-
-      // Show appropriate success message
-      if (designFiles && designFiles.length > 0) {
-        showNotification('Status updated and design file(s) uploaded!')
-      } else {
-        showNotification('Status updated!')
-      }
-
+      showNotification('Status updated!')
       fetchOrders()
       setShowModal(false)
       setEditingOrder(null)
     } catch (error) {
+      console.error('Failed to update status:', error)
       showNotification('Failed to update status', 'error')
     }
   }
@@ -173,6 +159,45 @@ export default function ReadyToSubmit() {
       }
     } catch (error) {
       showNotification('Failed to upload files', 'error')
+    }
+  }
+
+  const openOrderModal = async (order) => {
+    try {
+      const res = await ordersApi.getById(order.id, { include_items: true })
+      setOrderModalOrder(res.data)
+      setShowOrderModal(true)
+    } catch (error) {
+      console.error('Failed to fetch order details:', error)
+      showNotification('Failed to load order details', 'error')
+    }
+  }
+
+  const handleSaveOrder = async (orderData) => {
+    try {
+      const mediaFiles = orderData.media_files
+      const updateData = { ...orderData }
+      delete updateData.media_files
+
+      await ordersApi.update(updateData.id, updateData)
+
+      if (mediaFiles && mediaFiles.length > 0) {
+        try {
+          await mediaApi.upload(updateData.id, mediaFiles)
+        } catch (mediaErr) {
+          console.warn('Media upload failed:', mediaErr)
+        }
+      }
+
+      showNotification('Order updated successfully!', 'success')
+      fetchOrders()
+      if (orderModalOrder && orderModalOrder.id === orderData.id) {
+        const res = await ordersApi.getById(orderModalOrder.id, { include_items: true })
+        setOrderModalOrder(res.data)
+      }
+    } catch (error) {
+      console.error('Failed to update order:', error)
+      showNotification('Failed to update order', 'error')
     }
   }
 
@@ -553,8 +578,8 @@ export default function ReadyToSubmit() {
       {/* Orders List */}
       <div className="bg-dark-800 rounded-lg border border-dark-700 overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center p-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+          <div className="p-6">
+            <TableSkeleton rows={8} columns={7} />
           </div>
         ) : orders.length === 0 ? (
           <div className="p-12 text-center">
@@ -640,18 +665,46 @@ export default function ReadyToSubmit() {
                       <code className="bg-dark-700 px-2 py-1 rounded text-sm text-primary-400">{order.courier_parcel_id}</code>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => navigate(`/orders/${order.id}/edit`)}
+                          className="group relative p-2 bg-primary-500/10 hover:bg-primary-500/20 text-primary-400 hover:text-primary-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                          title="Edit Order"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Edit
+                          </span>
+                        </button>
                         <button
                           onClick={() => {
                             setEditingOrder(order)
                             setShowModal(true)
                           }}
-                          className="text-primary-400 hover:text-primary-300 p-1"
+                          className="group relative p-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
                           title="Quick Update"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Quick Update
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => navigate(`/orders/${order.id}`)}
+                          className="group relative p-2 bg-accent-cyan/10 hover:bg-accent-cyan/20 text-accent-cyan hover:text-accent-teal rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                          title="View Details"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            View Details
+                          </span>
                         </button>
                         <button
                           onClick={async () => {
@@ -664,22 +717,42 @@ export default function ReadyToSubmit() {
                               alert('Failed to load media.')
                             }
                           }}
-                          className="text-purple-400 hover:text-purple-300 p-1"
+                          className="group relative p-2 bg-accent-purple/10 hover:bg-accent-purple/20 text-accent-purple hover:text-accent-pink rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
                           title="View Media"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Media
+                          </span>
                         </button>
-                        <Link
-                          to={`/orders`}
-                          className="text-dark-400 hover:text-dark-300 p-1"
-                          title="Full Details"
+                        {!order.courier_parcel_id && (
+                          <button
+                            onClick={() => sendToSteadfast(order.id, window.event)}
+                            className="group relative p-2 bg-accent-orange/10 hover:bg-accent-orange/20 text-accent-orange hover:text-orange-400 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                            title="Send to Steadfast"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 18h.01" />
+                            </svg>
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                              Steadfast
+                            </span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeleteOrder(order.id)}
+                          className="group relative p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                          title="Delete"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
-                        </Link>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Delete
+                          </span>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -697,7 +770,7 @@ export default function ReadyToSubmit() {
         </div>
       )}
 
-      {/* Edit Modal */}
+      {/* Quick Action Modal */}
       {showModal && editingOrder && (
         <QuickActionModal
           order={editingOrder}
@@ -717,6 +790,19 @@ export default function ReadyToSubmit() {
             setOrderMedia(null)
             setEditingOrder(null)
           }}
+        />
+      )}
+
+      {/* Order Modal */}
+      {showOrderModal && orderModalOrder && (
+        <OrderModal
+          order={orderModalOrder}
+          onClose={() => {
+            setShowOrderModal(false)
+            setOrderModalOrder(null)
+          }}
+          onSave={handleSaveOrder}
+          loading={false}
         />
       )}
     </div>

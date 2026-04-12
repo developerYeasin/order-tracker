@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import { ordersApi, mediaApi } from '../services/api'
 import { DIVISION_OPTIONS, DISTRICT_OPTIONS, getDistrictsByDivision, getUpazilasByDistrict } from '../constants/locations'
-import { Link } from 'react-router-dom'
+import OrderModal from '../components/OrderModal'
+import { TableSkeleton } from '../components/ui/Skeleton'
 
 const StatusBadge = ({ status }) => {
   const statusMap = {
@@ -18,6 +20,7 @@ const StatusBadge = ({ status }) => {
 }
 
 export default function DesignPending() {
+  const navigate = useNavigate()
   const [orders, setOrders] = useState([])
   const [search, setSearch] = useState('')
   const [selectedDivision, setSelectedDivision] = useState('')
@@ -29,6 +32,8 @@ export default function DesignPending() {
   const [notification, setNotification] = useState(null)
   const fileInputRef = useRef(null)
   const [selectedOrderIds, setSelectedOrderIds] = useState(new Set())
+  const [showOrderModal, setShowOrderModal] = useState(false)
+  const [orderModalOrder, setOrderModalOrder] = useState(null)
   const [showColumnModal, setShowColumnModal] = useState(false)
   const [selectedColumns, setSelectedColumns] = useState({
     order_id: true,
@@ -124,6 +129,25 @@ export default function DesignPending() {
     setShowColumnModal(true)
   }
 
+  const handleMarkAsReady = async () => {
+    if (selectedOrderIds.size === 0) {
+      alert('Please select at least one order')
+      return
+    }
+    if (!confirm(`Mark ${selectedOrderIds.size} order(s) as Design Ready?`)) return
+
+    try {
+      for (const orderId of selectedOrderIds) {
+        await ordersApi.updateStatus(orderId, { design_ready: true })
+      }
+      showNotification(`${selectedOrderIds.size} order(s) marked as Design Ready`)
+      setSelectedOrderIds(new Set())
+      fetchOrders()
+    } catch (error) {
+      showNotification('Failed to update orders', 'error')
+    }
+  }
+
   const handleGeneratePdf = () => {
     // Validate at least one column selected
     const hasSelectedColumn = Object.values(selectedColumns).some(val => val)
@@ -189,24 +213,14 @@ export default function DesignPending() {
 
   const handleUpdateStatus = async (orderId, statusData) => {
     try {
-      console.log('[Debug] Updating status for order:', orderId, 'data:', statusData)
-      // Status update; design_files (if any) will be sent in statusData
-      console.log('[Debug] Updating status via API...')
       await ordersApi.updateStatus(orderId, statusData)
-      console.log('[Debug] Status update successful')
-
       showNotification('Status updated!')
       fetchOrders()
       setShowModal(false)
       setEditingOrder(null)
     } catch (error) {
-      console.error('[Debug] Status update error:', error)
-      if (error.response) {
-        console.error('[Debug] Error response status:', error.response.status)
-        console.error('[Debug] Error response data:', error.response.data)
-      }
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to update status'
-      showNotification(`Failed to update status: ${errorMessage}`, 'error')
+      console.error('Failed to update status:', error)
+      showNotification('Failed to update status', 'error')
     }
   }
 
@@ -221,6 +235,45 @@ export default function DesignPending() {
       }
     } catch (error) {
       showNotification('Failed to upload files', 'error')
+    }
+  }
+
+  const handleSaveOrder = async (orderData) => {
+    try {
+      const mediaFiles = orderData.media_files
+      const updateData = { ...orderData }
+      delete updateData.media_files
+
+      await ordersApi.update(updateData.id, updateData)
+
+      if (mediaFiles && mediaFiles.length > 0) {
+        try {
+          await mediaApi.upload(updateData.id, mediaFiles)
+        } catch (mediaErr) {
+          console.warn('Media upload failed:', mediaErr)
+        }
+      }
+
+      showNotification('Order updated successfully!', 'success')
+      fetchOrders()
+      if (orderModalOrder && orderModalOrder.id === orderData.id) {
+        const res = await ordersApi.getById(orderModalOrder.id, { include_items: true })
+        setOrderModalOrder(res.data)
+      }
+    } catch (error) {
+      console.error('Failed to update order:', error)
+      showNotification('Failed to update order', 'error')
+    }
+  }
+
+  const openOrderModal = async (order) => {
+    try {
+      const res = await ordersApi.getById(order.id, { include_items: true })
+      setOrderModalOrder(res.data)
+      setShowOrderModal(true)
+    } catch (error) {
+      console.error('Failed to fetch order details:', error)
+      showNotification('Failed to load order details', 'error')
     }
   }
 
@@ -726,14 +779,20 @@ export default function DesignPending() {
       </div>
 
       {/* Orders List */}
-      <div className="bg-dark-800 rounded-lg border border-dark-700 overflow-hidden">
+      <div className="bg-gradient-to-br from-dark-800 to-dark-900 rounded-2xl border border-dark-700/50 shadow-soft overflow-hidden animate-fade-in">
         {loading ? (
-          <div className="flex items-center justify-center p-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+          <div className="p-6">
+            <TableSkeleton rows={8} columns={6} />
           </div>
         ) : orders.length === 0 ? (
-          <div className="p-12 text-center">
-            <p className="text-dark-400">No orders ready to print.</p>
+          <div className="p-20 text-center animate-fade-in">
+            <div className="w-24 h-24 bg-gradient-to-br from-primary-500/20 to-accent-purple/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <svg className="w-12 h-12 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.587a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-2.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+              </svg>
+            </div>
+            <p className="text-xl font-medium text-white mb-2">No design pending orders</p>
+            <p className="text-dark-400 text-sm">Orders marked as "Design Ready" will appear here</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -747,9 +806,16 @@ export default function DesignPending() {
                   Print Selected ({selectedOrderIds.size})
                 </button>
                 <button
-                  onClick={handleMarkAsPrinted}
+                  onClick={handleMarkAsReady}
                   disabled={selectedOrderIds.size === 0}
                   className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
+                >
+                  Mark Design Ready ({selectedOrderIds.size})
+                </button>
+                <button
+                  onClick={handleMarkAsPrinted}
+                  disabled={selectedOrderIds.size === 0}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded-lg text-sm transition-colors"
                 >
                   Mark as Printed ({selectedOrderIds.size})
                 </button>
@@ -773,63 +839,99 @@ export default function DesignPending() {
             </div>
 
             <table className="w-full">
-              <thead className="bg-dark-900">
+              <thead className="bg-gradient-to-r from-dark-900 to-dark-800">
                 <tr>
-                  <th className="px-6 py-4 text-center w-16">
+                  <th className="px-4 md:px-6 py-4 text-center w-16">
                     <input
                       type="checkbox"
                       checked={selectedOrderIds.size === orders.length && orders.length > 0}
                       onChange={handleSelectAll}
-                      className="w-4 h-4 cursor-pointer"
+                      className="w-4 h-4 cursor-pointer rounded text-primary-500 focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-dark-800"
                     />
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Order #</th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Customer</th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Location</th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Price</th>
-                  <th className="px-6 py-4 text-left text-xs font-medium text-dark-400 uppercase tracking-wider">Actions</th>
+                  <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Order #</th>
+                  <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Customer</th>
+                  <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Location</th>
+                  <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Price</th>
+                  <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Parcel ID</th>
+                  <th className="px-4 md:px-6 py-4 text-left text-xs font-semibold text-dark-300 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-dark-700">
+              <tbody className="divide-y divide-dark-700/50">
                 {orders.map((order) => (
-                  <tr key={order.id} className="hover:bg-dark-900 transition-colors">
-                    <td className="px-6 py-4 text-center">
+                  <tr key={order.id} className="hover:bg-dark-700/50 transition-all duration-200 group">
+                    <td className="px-4 md:px-6 py-4 text-center">
                       <input
                         type="checkbox"
                         checked={selectedOrderIds.has(order.id)}
                         onChange={() => handleSelectOrder(order.id)}
-                        className="w-4 h-4 cursor-pointer"
+                        className="w-4 h-4 cursor-pointer rounded text-primary-500 focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-dark-800"
                       />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-white font-medium">#{order.id}</span>
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
+                      <span className="text-white font-semibold group-hover:text-primary-400 transition-colors">#{order.id}</span>
                       <p className="text-xs text-dark-400">{new Date(order.created_at).toLocaleDateString()}</p>
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-white font-medium">{order.customer_name}</p>
+                    <td className="px-4 md:px-6 py-4">
+                      <p className="text-white font-medium group-hover:text-primary-300 transition-colors">{order.customer_name}</p>
                       <p className="text-sm text-dark-400">{order.phone_number}</p>
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-dark-300 text-sm">{order.division}</p>
+                    <td className="px-4 md:px-6 py-4">
+                      <p className="text-dark-200 text-sm">{order.division}</p>
                       <p className="text-xs text-dark-400">{order.district}</p>
                     </td>
-                    <td className="px-6 py-4">
-                      <span className="text-dark-300 font-medium">৳{order.price || '0'}</span>
+                    <td className="px-4 md:px-6 py-4">
+                      <span className="text-dark-200 font-semibold">৳{order.price || '0'}</span>
                       <p className="text-xs text-dark-400">{order.payment_type}</p>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
+                    <td className="px-4 md:px-6 py-4">
+                      {order.courier_parcel_id ? (
+                        <code className="bg-dark-700 px-2 py-1 rounded text-sm text-primary-400">{order.courier_parcel_id}</code>
+                      ) : (
+                        <span className="text-dark-500">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => navigate(`/orders/${order.id}/edit`)}
+                          className="group relative p-2 bg-primary-500/10 hover:bg-primary-500/20 text-primary-400 hover:text-primary-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                          title="Edit Order"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Edit
+                          </span>
+                        </button>
                         <button
                           onClick={() => {
                             setEditingOrder(order)
                             setShowModal(true)
                           }}
-                          className="text-primary-400 hover:text-primary-300 p-1"
+                          className="group relative p-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 hover:text-yellow-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
                           title="Quick Update"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Quick Update
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => navigate(`/orders/${order.id}`)}
+                          className="group relative p-2 bg-accent-cyan/10 hover:bg-accent-cyan/20 text-accent-cyan hover:text-accent-teal rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                          title="View Details"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            View Details
+                          </span>
                         </button>
                         <button
                           onClick={async () => {
@@ -842,22 +944,42 @@ export default function DesignPending() {
                               alert('Failed to load media.')
                             }
                           }}
-                          className="text-purple-400 hover:text-purple-300 p-1"
+                          className="group relative p-2 bg-accent-purple/10 hover:bg-accent-purple/20 text-accent-purple hover:text-accent-pink rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
                           title="View Media"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Media
+                          </span>
                         </button>
-                        <Link
-                          to={`/orders`}
-                          className="text-dark-400 hover:text-dark-300 p-1"
-                          title="Full Details"
+                        {!order.courier_parcel_id && (
+                          <button
+                            onClick={(e) => sendToSteadfast(order.id, e)}
+                            className="group relative p-2 bg-accent-orange/10 hover:bg-accent-orange/20 text-accent-orange hover:text-orange-400 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                            title="Send to Steadfast"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 18h.01" />
+                            </svg>
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                              Steadfast
+                            </span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeleteOrder(order.id)}
+                          className="group relative p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 rounded-xl transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+                          title="Delete"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
-                        </Link>
+                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                            Delete
+                          </span>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -875,7 +997,7 @@ export default function DesignPending() {
         </div>
       )}
 
-      {/* Edit Modal */}
+      {/* Quick Action Modal */}
       {showModal && editingOrder && (
         <QuickActionModal
           order={editingOrder}
@@ -895,6 +1017,19 @@ export default function DesignPending() {
             setOrderMedia(null)
             setEditingOrder(null)
           }}
+        />
+      )}
+
+      {/* Order Modal */}
+      {showOrderModal && orderModalOrder && (
+        <OrderModal
+          order={orderModalOrder}
+          onClose={() => {
+            setShowOrderModal(false)
+            setOrderModalOrder(null)
+          }}
+          onSave={handleSaveOrder}
+          loading={false}
         />
       )}
 
