@@ -79,7 +79,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
   const [existingMedia, setExistingMedia] = useState([])
   const [newFiles, setNewFiles] = useState([])
   const [items, setItems] = useState(order?.items || [])
-  const [newItem, setNewItem] = useState({ size: 'M', quantity: 1, note: '' })
+  const [newItem, setNewItem] = useState({ size: 'M', quantity: 1, note: '', color: 'white', design: 'both' })
   const [itemFiles, setItemFiles] = useState({})
   const fileInputRef = useRef(null)
   const [districtSearch, setDistrictSearch] = useState('')
@@ -233,7 +233,7 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
       const res = await ordersApi.createItem(order.id, newItem)
       const createdItem = res.data
       setItems(prev => [...prev, createdItem])
-      setNewItem({ size: 'M', quantity: 1, note: '' })
+      setNewItem({ size: 'M', quantity: 1, note: '', color: 'white', design: 'both' })
       setItemFiles(prev => ({ ...prev, [createdItem.id]: { front: [], back: [] } }))
     } catch (error) {
       console.error('Failed to create item:', error)
@@ -793,8 +793,8 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
               {items.length > 0 && (
                 <div className="bg-dark-800/50 border-2 border-primary-500/30 rounded-2xl p-6">
                   <h4 className="text-lg font-bold text-white mb-4">Add Another Item</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                    <div className="space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+                    <div className="space-y-2 md:col-span-1">
                       <label className="text-sm font-semibold text-dark-300">Size</label>
                       <select
                         value={newItem.size}
@@ -806,7 +806,38 @@ export default function OrderModal({ order, onClose, onSave, loading }) {
                         ))}
                       </select>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-2 md:col-span-1">
+                      <label className="text-sm font-semibold text-dark-300">Color</label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNewItem({ ...newItem, color: 'white' })}
+                          className={`px-3 py-2 rounded-xl text-sm font-medium border-2 transition-all ${newItem.color === 'white' ? 'bg-white border-yellow-500 text-white ring-2 ring-white ring-offset-2 ring-offset-dark-800' : 'bg-dark-700/80 border-dark-600 text-dark-300 hover:border-dark-500'}`}
+                        >
+                          White
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewItem({ ...newItem, color: 'black' })}
+                          className={`px-3 py-2 rounded-xl text-sm font-medium border-2 transition-all ${newItem.color === 'black' ? 'bg-black border-yellow-500 text-white ring-2 ring-black ring-offset-2 ring-offset-dark-800' : 'bg-dark-700/80 border-dark-600 text-dark-300 hover:border-dark-500'}`}
+                        >
+                          Black
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-2 md:col-span-1">
+                      <label className="text-sm font-semibold text-dark-300">Design</label>
+                      <select
+                        value={newItem.design}
+                        onChange={(e) => setNewItem({ ...newItem, design: e.target.value })}
+                        className="w-full px-4 py-3 bg-dark-700/80 border-2 border-dark-600 rounded-xl text-white focus:ring-2 focus:ring-primary-500"
+                      >
+                        <option value="front">Front</option>
+                        <option value="back">Back</option>
+                        <option value="both">Both</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2 md:col-span-1">
                       <label className="text-sm font-semibold text-dark-300">Quantity</label>
                       <input
                         type="number"

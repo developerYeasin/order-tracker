@@ -22,6 +22,16 @@ module.exports = (sequelize) => {
     note: {
       type: DataTypes.TEXT,
       allowNull: true
+    },
+    color: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'white'
+    },
+    design: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+      defaultValue: 'both'
     }
   }, {
     tableName: 'order_items',
@@ -38,6 +48,8 @@ module.exports = (sequelize) => {
       quantity: this.quantity,
       position: this.position,
       note: this.note,
+      color: this.color,
+      design: this.design,
       created_at: this.created_at ? this.created_at.toISOString() : null,
       updated_at: this.updated_at ? this.updated_at.toISOString() : null
     };

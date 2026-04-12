@@ -59,9 +59,9 @@ const OrderCreate = () => {
 
   const [itemFiles, setItemFiles] = useState({}) // index -> { front: File[], back: File[] }
   const [itemExistingImages, setItemExistingImages] = useState({}) // index -> { front: [], back: [] } (for edit mode)
-  const [newItem, setNewItem] = useState({ size: 'M', quantity: 1, note: '' })
+  const [newItem, setNewItem] = useState({ size: 'M', quantity: 1, note: '', color: 'white', design: 'both' })
   const [districtSearch, setDistrictSearch] = useState('')
-  const [upazilaSearch, setUpazilaSearch] = useState('')
+  const [upazilaSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [submitAction, setSubmitAction] = useState(null) // 'save' or 'createAnother'
   const [tempIdCounter, setTempIdCounter] = useState(0)
@@ -123,6 +123,8 @@ const OrderCreate = () => {
             size: item.size,
             quantity: item.quantity,
             note: item.note || '',
+            color: item.color || 'white',
+            design: item.design || 'both',
             position: item.position
           }))
 
@@ -266,7 +268,7 @@ const OrderCreate = () => {
         ...prev,
         items: [...prev.items, { ...newItem, position: prev.items.length, temp_id: tempId }]
       }))
-      setNewItem({ size: 'M', quantity: 1, note: '' })
+      setNewItem({ size: 'M', quantity: 1, note: '', color: 'white', design: 'both' })
     }
   }
 
@@ -337,33 +339,27 @@ const OrderCreate = () => {
   }
 
   // Remove existing image (mark for deletion on save)
-  const handleRemoveExistingImage = (itemIndex, side, imgIdx) => {
+  const handleRemoveExistingImage = (itemIndex, side, imageId) => {
+    if (!imageId) return
     setItemExistingImages(prev => {
       const current = prev[itemIndex]?.[side] || []
-      const newImages = current.filter((_, i) => i !== imgIdx)
       return {
         ...prev,
         [itemIndex]: {
           ...prev[itemIndex],
-          [side]: newImages
+          [side]: current.filter((img) => img.id !== imageId)
         }
       }
     })
-    // Track removed image for API call
     setRemovedExistingImages(prev => {
       const itemRemovals = prev[itemIndex] || { front: [], back: [] }
-      const existingImages = itemExistingImages[itemIndex]?.[side] || []
-      const removedImg = existingImages[imgIdx]
-      if (removedImg?.id) {
-        return {
-          ...prev,
-          [itemIndex]: {
-            ...itemRemovals,
-            [side]: [...(itemRemovals[side] || []), removedImg.id]
-          }
+      return {
+        ...prev,
+        [itemIndex]: {
+          ...itemRemovals,
+          [side]: [...(itemRemovals[side] || []), imageId]
         }
       }
-      return prev
     })
   }
 
@@ -407,7 +403,9 @@ const OrderCreate = () => {
           size: item.size,
           quantity: item.quantity,
           position: item.position,
-          note: item.note
+          note: item.note,
+          color: item.color,
+          design: item.design
         }))
       }
 
@@ -481,7 +479,7 @@ const OrderCreate = () => {
           items: [],
         })
         setItemFiles({})
-        setNewItem({ size: 'M', quantity: 1, note: '' })
+        setNewItem({ size: 'M', quantity: 1, note: '', color: 'white', design: 'both' })
         setDistrictSearch('')
         setUpazilaSearch('')
         // Scroll to top
@@ -614,7 +612,16 @@ const OrderCreate = () => {
                         }}
                         title="Download"
                       />
-                      {/* Image removal disabled - images cannot be removed once added */}
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        icon={<TrashIcon className="w-4 h-4" />}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          onRemoveExisting(img.id)
+                        }}
+                        title="Remove"
+                      />
                     </div>
                   </div>
                 ))}
@@ -641,7 +648,16 @@ const OrderCreate = () => {
                         }}
                         title="Download"
                       />
-                      {/* Image removal disabled - images cannot be removed once added */}
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        icon={<TrashIcon className="w-4 h-4" />}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          onRemoveFile(i)
+                        }}
+                        title="Remove"
+                      />
                     </div>
                   </div>
                 ))}
@@ -1028,7 +1044,7 @@ const OrderCreate = () => {
                                               newItems[idx].color = 'white'
                                               setFormData({ ...formData, items: newItems })
                                             }}
-                                            className={`px-3 py-1.5 rounded-lg font-medium text-sm border-2 transition-all ${item.color === 'white' ? 'bg-white border-yellow-500 text-white ring-1 ring-white' : 'bg-dark-700/80 border-dark-600 text-dark-300 hover:border-dark-500'}`}
+                                            className={`px-3 py-1.5 rounded-lg font-medium text-sm border-2 transition-all ${item.color === 'white' ? 'bg-white border-yellow-500 text-block ring-1 ring-white' : 'bg-dark-700/80 border-dark-600 text-dark-300 hover:border-dark-500'}`}
                                           >
                                             White
                                           </button>

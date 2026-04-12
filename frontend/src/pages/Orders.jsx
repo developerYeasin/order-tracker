@@ -422,7 +422,7 @@ export default function Orders() {
     media_files: [],
     items: [], // Array of { size, quantity, position }
   })
-  const [newItem, setNewItem] = useState({ size: 'M', quantity: 1, note: '' })
+  const [newItem, setNewItem] = useState({ size: 'M', quantity: 1, note: '', color: 'white', design: 'both' })
   const [itemFiles, setItemFiles] = useState({}) // { index: { front: File[], back: File[] } }
   const [selectedOrderIds, setSelectedOrderIds] = useState(new Set())
   const [showColumnModal, setShowColumnModal] = useState(false)
@@ -564,7 +564,7 @@ export default function Orders() {
       ...prev,
       items: [...prev.items, { ...newItem, position: prev.items.length + 1 }]
     }))
-    setNewItem({ size: 'M', quantity: 1, note: '' }) // reset
+    setNewItem({ size: 'M', quantity: 1, note: '', color: 'white', design: 'both' }) // reset
   }
 
   const handleRemoveItem = (index) => {
@@ -836,7 +836,9 @@ export default function Orders() {
           size: item.size,
           quantity: item.quantity,
           position: item.position,
-          note: item.note
+          note: item.note,
+          color: item.color,
+          design: item.design
         }))
       }
 
@@ -960,7 +962,7 @@ export default function Orders() {
         items: [],
       })
       setItemFiles({})
-      setNewItem({ size: 'M', quantity: 1 })
+      setNewItem({ size: 'M', quantity: 1, note: '', color: 'white', design: 'both' })
       fetchOrders()
       console.log('=== handleCreateOrder completed ===')
       setSaving(false)
@@ -1651,6 +1653,47 @@ export default function Orders() {
                               className="bg-dark-700 border border-dark-600 rounded text-white text-sm w-16 px-2 py-1"
                             />
                           </div>
+                          <div className="flex items-center gap-1">
+                            <label className="text-sm text-dark-300">Color:</label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newItems = [...formData.items]
+                                newItems[idx].color = 'white'
+                                setFormData({ ...formData, items: newItems })
+                              }}
+                              className={`px-2 py-1 rounded text-xs font-medium border transition-all ${item.color === 'white' ? 'bg-white border-yellow-500 text-gray-900' : 'bg-dark-700 border-dark-600 text-dark-300 hover:border-dark-500'}`}
+                            >
+                              W
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newItems = [...formData.items]
+                                newItems[idx].color = 'black'
+                                setFormData({ ...formData, items: newItems })
+                              }}
+                              className={`px-2 py-1 rounded text-xs font-medium border transition-all ${item.color === 'black' ? 'bg-black border-yellow-500 text-white' : 'bg-dark-700 border-dark-600 text-dark-300 hover:border-dark-500'}`}
+                            >
+                              B
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm text-dark-300">Design:</label>
+                            <select
+                              value={item.design || 'both'}
+                              onChange={(e) => {
+                                const newItems = [...formData.items]
+                                newItems[idx] = { ...newItems[idx], design: e.target.value }
+                                setFormData({ ...formData, items: newItems })
+                              }}
+                              className="bg-dark-700 border border-dark-600 rounded text-white text-sm px-2 py-1"
+                            >
+                              <option value="front">Front</option>
+                              <option value="back">Back</option>
+                              <option value="both">Both</option>
+                            </select>
+                          </div>
                           <div className="w-full mt-2">
                             <label className="block text-xs text-dark-400 mb-1">Note (optional)</label>
                             <textarea
@@ -1772,6 +1815,37 @@ export default function Orders() {
                           onChange={(e) => setNewItem({ ...newItem, quantity: parseInt(e.target.value) || 1 })}
                           className="bg-dark-700 border border-dark-600 rounded text-white text-sm w-20 px-2 py-1"
                         />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-dark-400 mb-1">Color</label>
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setNewItem({ ...newItem, color: 'white' })}
+                            className={`px-2 py-1 rounded text-xs font-medium border transition-all ${newItem.color === 'white' ? 'bg-white border-yellow-500 text-gray-900' : 'bg-dark-700 border-dark-600 text-dark-300 hover:border-dark-500'}`}
+                          >
+                            W
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewItem({ ...newItem, color: 'black' })}
+                            className={`px-2 py-1 rounded text-xs font-medium border transition-all ${newItem.color === 'black' ? 'bg-black border-yellow-500 text-white' : 'bg-dark-700 border-dark-600 text-dark-300 hover:border-dark-500'}`}
+                          >
+                            B
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-dark-400 mb-1">Design</label>
+                        <select
+                          value={newItem.design}
+                          onChange={(e) => setNewItem({ ...newItem, design: e.target.value })}
+                          className="bg-dark-700 border border-dark-600 rounded text-white text-sm px-2 py-1"
+                        >
+                          <option value="front">Front</option>
+                          <option value="back">Back</option>
+                          <option value="both">Both</option>
+                        </select>
                       </div>
                       <div className="w-full">
                         <label className="block text-xs text-dark-400 mb-1">Note (optional)</label>

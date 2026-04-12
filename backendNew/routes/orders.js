@@ -104,7 +104,9 @@ router.post('/orders', async (req, res) => {
       size: itemData.size,
       quantity: parseInt(itemData.quantity, 10),
       position: itemData.position != null ? parseInt(itemData.position, 10) : null,
-      note: itemData.note || null
+      note: itemData.note || null,
+      color: itemData.color || 'white',
+      design: itemData.design || 'both'
     });
   }
 
@@ -172,6 +174,32 @@ router.post('/orders', async (req, res) => {
   const response = resultOrder.toJson({ with_status: true, with_items: true });
   response.steadfast = steadfastResult;
   res.status(201).json(response);
+});
+
+router.get('/orders/print', async (req, res) => {
+  const orderIds = (req.query.order_ids || '').split(',').map((id) => Number(id.trim())).filter((id) => !Number.isNaN(id));
+  if (!orderIds.length) return res.status(400).json({ error: 'order_ids parameter is required' });
+  let columns = null;
+  if (req.query.columns) {
+    try {
+      columns = JSON.parse(req.query.columns);
+    } catch (err) {
+      columns = null;
+    }
+  }
+
+  const orders = await Order.findAll({
+    where: { id: orderIds },
+    include: [
+      { model: OrderStatus, as: 'status' },
+      { model: Media, as: 'media' },
+      { model: OrderItem, as: 'items', include: [{ model: Media, as: 'media' }] }
+    ]
+  });
+
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const html = generatePrintHtml(orders, baseUrl, columns);
+  res.type('html').send(html);
 });
 
 router.get('/orders/:orderId', async (req, res) => {
@@ -495,7 +523,9 @@ router.post('/orders/:orderId/items', async (req, res) => {
     size: req.body.size,
     quantity,
     position: Number.isNaN(position) ? null : position,
-    note: req.body.note || null
+    note: req.body.note || null,
+    color: req.body.color || 'white',
+    design: req.body.design || 'both'
   });
 
   await logActivity(order.id, 'Item Created', `Size: ${item.size}, Qty: ${item.quantity}`);
@@ -525,6 +555,8 @@ router.put('/orders/:orderId/items/:itemId', async (req, res) => {
     item.position = req.body.position !== null ? parseInt(req.body.position, 10) : null;
   }
   if (req.body.note !== undefined) item.note = req.body.note;
+  if (req.body.color !== undefined) item.color = req.body.color;
+  if (req.body.design !== undefined) item.design = req.body.design;
 
   await item.save();
   await logActivity(req.params.orderId, 'Item Updated', `Item ${item.id} updated`);
@@ -592,6 +624,32 @@ const generatePrintHtml = (orders, baseUrl, columns) => {
 
   let html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Print Orders</title><style>@media print {@page { size: A4; margin: 0.5cm; }}body{font-family:Arial,sans-serif;margin:0;padding:20px;background:white;color:#000;} .header{text-align:center;margin-bottom:30px;border-bottom:2px solid #333;padding-bottom:15px;} .header h1{margin:0 0 10px 0;font-size:24pt;} .header p{margin:5px 0;font-size:10pt;color:#555;} .order{page-break-inside:avoid;margin-bottom:40px;border:1px solid #ddd;padding:20px;background:#fafafa;} .order-header{margin-bottom:15px;border-bottom:1px solid #ccc;padding-bottom:10px;} .order-title{font-size:18pt;font-weight:bold;color:#000;margin-bottom:10px;} .order-details{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;font-size:11pt;} .order-detail-item{margin:0;} .order-detail-label{font-weight:bold;color:#333;} .items-section{margin-top:15px;} .section-title{font-size:12pt;font-weight:bold;margin-bottom:8px;color:#333;} .items-table{width:100%;border-collapse:collapse;font-size:10pt;margin-top:5px;} .items-table th{background:#e0e0e0;padding:8px;text-align:left;border:1px solid #ccc;} .items-table td{padding:8px;border:1px solid #ccc;vertical-align:top;} .images-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;margin-top:4px;} .image-item{text-align:center;} .image-item img{max-width:80px;max-height:80px;object-fit:contain;border:1px solid #ccc;background:white;} .image-item p{font-size:8pt;margin:3px 0 0 0;word-break:break-all;} .footer{margin-top:20px;text-align:center;font-size:9pt;color:#777;border-top:1px solid #ddd;padding-top:10px;} .no-data{color:#999;font-style:italic;font-size:10pt;}</style></head><body>`;
   html += `<div class="header"><h1>Order Printout</h1><p>Generated on: ${escapeHtml(printDate)}</p><p>Total Orders: ${orders.length}</p></div>`;
+
+  const summaryBySize = {};
+  for (const order of orders) {
+    for (const item of order.items || []) {
+      const size = item.size || 'Unknown';
+      const color = item.color || 'white';
+      const quantity = Number(item.quantity) || 0;
+      if (!summaryBySize[size]) {
+        summaryBySize[size] = { total: 0, colors: {} };
+      }
+      summaryBySize[size].total += quantity;
+      summaryBySize[size].colors[color] = (summaryBySize[size].colors[color] || 0) + quantity;
+    }
+  }
+
+  if (Object.keys(summaryBySize).length) {
+    html += `<div class="summary-section"><div class="section-title">Summary by Size and Color</div><table class="summary-table"><thead><tr><th>Size</th><th>Total Qty</th><th>Color Breakdown</th></tr></thead><tbody>`;
+    for (const [size, itemData] of Object.entries(summaryBySize)) {
+      const colorBreakdown = Object.entries(itemData.colors)
+        .map(([color, qty]) => `${escapeHtml(color)}: ${qty}`)
+        .join(', ');
+      html += `<tr><td>${escapeHtml(size)}</td><td>${itemData.total}</td><td>${escapeHtml(colorBreakdown)}</td></tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+
   for (const order of orders) {
     html += `<div class="order"><div class="order-header"><div class="order-title">Order #${order.id}</div><div class="order-details">`;
     if (cols.customer_name) html += `<div class="order-detail-item"><span class="order-detail-label">Customer:</span> ${escapeHtml(order.customer_name)}</div>`;
