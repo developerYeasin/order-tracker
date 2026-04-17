@@ -75,7 +75,7 @@ router.get('/orders', async (req, res) => {
 
 router.post('/orders', async (req, res) => {
   const data = req.body;
-  const required = ['customer_name', 'phone_number', 'division', 'district', 'upazila_zone', 'description', 'payment_type'];
+  const required = ['customer_name', 'phone_number', 'address'];
   for (const field of required) {
     if (!data[field]) {
       return res.status(400).json({ error: `${field} is required` });
