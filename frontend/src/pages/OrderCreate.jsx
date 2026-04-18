@@ -626,42 +626,42 @@ const OrderCreate = () => {
           : "Order created successfully!",
       );
 
-      // if (submitAction === "createAnother" && !isEditMode) {
-      //   // Reset form for another order (only in create mode)
-      //   setFormData({
-      //     customer_name: "",
-      //     phone_number: "",
-      //     division_id: "",
-      //     district_id: "",
-      //     upazila_id: "",
-      //     address: "",
-      //     description: "",
-      //     price: "",
-      //     payment_type: "COD",
-      //     courier_parcel_id: "",
-      //     media_files: [],
-      //     items: [],
-      //   });
-      //   setItemFiles({});
-      //   setNewItem({
-      //     size: "M",
-      //     quantity: 1,
-      //     note: "",
-      //     color: "white",
-      //     design: "both",
-      //   });
-      //   setDistrictSearch("");
-      //   setUpazilaSearch("");
-      //   // Scroll to top
-      //   window.scrollTo(0, 0);
-      // } else {
-      //   // Navigate to order view (for edit) or orders list (for create)
-      //   if (isEditMode) {
-      //     navigate(`/orders/${orderId}`);
-      //   } else {
-      //     navigate("/orders");
-      //   }
-      // }
+      if (submitAction === "createAnother" && !isEditMode) {
+        // Reset form for another order (only in create mode)
+        setFormData({
+          customer_name: "",
+          phone_number: "",
+          division_id: "",
+          district_id: "",
+          upazila_id: "",
+          address: "",
+          description: "",
+          price: "",
+          payment_type: "COD",
+          courier_parcel_id: "",
+          media_files: [],
+          items: [],
+        });
+        setItemFiles({});
+        setNewItem({
+          size: "M",
+          quantity: 1,
+          note: "",
+          color: "white",
+          design: "both",
+        });
+        setDistrictSearch("");
+        setUpazilaSearch("");
+        // Scroll to top
+        window.scrollTo(0, 0);
+      } else {
+        // Navigate to order view (for edit) or orders list (for create)
+        if (isEditMode) {
+          navigate(`/orders/${orderId}`);
+        } else {
+          navigate("/orders");
+        }
+      }
     } catch (error) {
       console.error("Order creation failed:", error);
       showNotification(
