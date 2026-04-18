@@ -547,7 +547,7 @@ const OrderCreate = () => {
       // Upload order-level media (for both create and edit)
       if (mediaFiles && mediaFiles.length > 0) {
         try {
-          await mediaApi.uploadDesignFiles(orderId, mediaFiles);
+          // await mediaApi.uploadDesignFiles(orderId, mediaFiles);
         } catch (err) {
           console.error("Media upload failed:", err);
           showNotification(
@@ -558,11 +558,16 @@ const OrderCreate = () => {
           );
         }
       }
-
+      console.log(
+        "Uploading item-specific files...",
+        formData.items,
+        formData.items.length > 0,
+        savedItems,
+      );
       // Upload item-specific files (for both create and edit)
       if (formData.items && formData.items.length > 0) {
         for (let idx = 0; idx < formData.items.length; idx++) {
-          const savedItem = formData.items[idx];
+          const savedItem = savedItems[idx];
           // if (!savedItem || !savedItem.id) continue;
           console.log("Uploading item-specific files...", savedItem);
           const filesForItem = itemFiles[idx];
@@ -586,6 +591,18 @@ const OrderCreate = () => {
                   filesForItem.back,
                   savedItem.id,
                   "back",
+                );
+              } catch (uploadErr) {
+                console.error("Back image upload failed:", uploadErr);
+              }
+            }
+            if (filesForItem.both && filesForItem.both.length > 0) {
+              try {
+                await mediaApi.upload(
+                  orderId,
+                  filesForItem.back,
+                  savedItem.id,
+                  "both",
                 );
               } catch (uploadErr) {
                 console.error("Back image upload failed:", uploadErr);
