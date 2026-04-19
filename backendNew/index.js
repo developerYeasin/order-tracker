@@ -49,7 +49,7 @@ app.get('/health', (req, res) => {
 const start = async () => {
   try {
     await sequelize.authenticate();
-    await sequelize.sync({ alter: true });
+    await sequelize.sync({ alter: false });
     app.listen(config.app.port, '0.0.0.0', () => {
       console.log(`backendNew running on http://localhost:${config.app.port}`);
     });
