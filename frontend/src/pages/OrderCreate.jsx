@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ordersApi, mediaApi } from "../services/api";
+import { ordersApi, mediaApi, uploadApi } from "../services/api";
 import {
   DIVISION_OPTIONS,
   DISTRICT_OPTIONS,
   getDistrictsByDivision,
   getUpazilasByDistrict,
 } from "../constants/locations";
+
+
 import SearchableSelect from "../components/SearchableSelect";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import {
@@ -25,6 +27,8 @@ import {
   PencilIcon,
 } from "@heroicons/react/24/outline";
 import { Card, Button, IconButton, EmptyState } from "../components/ui";
+
+
 
 const TABS = [
   {
@@ -49,6 +53,7 @@ const OrderCreate = () => {
   const isEditMode = !!id;
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+  const removedOrderUploadKeysRef = useRef(new Set());
   const [notification, setNotification] = useState(null);
   const [activeTab, setActiveTab] = useState("info");
   const [loading, setLoading] = useState(isEditMode);
@@ -74,8 +79,16 @@ const OrderCreate = () => {
     items: [],
   });
 
-  const [itemFiles, setItemFiles] = useState({}); // index -> { front: File[], back: File[] }
-  const [itemExistingImages, setItemExistingImages] = useState({}); // index -> { front: [], back: [] } (for edit mode)
+  // Use stable key (id or temp_id) for itemFiles
+  const [itemFiles, setItemFiles] = useState({}); // key -> { front: File[], back: File[] }
+  // Track upload status for each item/side
+  const [itemUploadStatus, setItemUploadStatus] = useState({}); // key -> { front: bool, back: bool }
+  // Track order-level files: { file, preview, status, url }
+  const [orderFiles, setOrderFiles] = useState([]); // [{file, preview, status, url, error}]
+  const [uploadedOrderMedia, setUploadedOrderMedia] = useState([]); // [{url, ...}] (for backend compatibility)
+  // Use stable key (id or temp_id) for uploadedItemMedia
+  const [uploadedItemMedia, setUploadedItemMedia] = useState({}); // key -> { front: [url], back: [url], both: [url] }
+  const [itemExistingImages, setItemExistingImages] = useState({}); // key -> { front: [], back: [] } (for edit mode)
   const [newItem, setNewItem] = useState({
     size: "M",
     quantity: 1,
@@ -103,6 +116,11 @@ const OrderCreate = () => {
 
   // Track removed existing images: { itemIndex: { front: [], back: [] } }
   const [removedExistingImages, setRemovedExistingImages] = useState({});
+
+  const [removedExistingAttachments, setRemovedExistingAttachments] = useState([]);
+  const handleRemoveExistingAttachment = (id) => {
+    setRemovedExistingAttachments((prev) => [...prev, id]);
+  };
 
   const filteredFormDistricts = useMemo(() => {
     if (!formData.division_id) return [];
@@ -181,13 +199,20 @@ const OrderCreate = () => {
 
           // Load existing item images (front/back) for each item
           const existingItemImages = {};
-          order.items?.forEach((item, idx) => {
-            existingItemImages[idx] = {
+          const uploadedItemMediaInit = {};
+          order.items?.forEach((item) => {
+            const key = item.id || item.temp_id;
+            existingItemImages[key] = {
               front: item.front_images || [],
               back: item.back_images || [],
             };
+            uploadedItemMediaInit[key] = {
+              front: (item.front_images || []).map(img => img.file_url || img.file_path),
+              back: (item.back_images || []).map(img => img.file_url || img.file_path),
+            };
           });
           setItemExistingImages(existingItemImages);
+          setUploadedItemMedia(uploadedItemMediaInit);
 
           setLoading(false);
         } catch (error) {
@@ -201,7 +226,7 @@ const OrderCreate = () => {
     }
   }, [isEditMode, id]);
 
-  const validateAndAddFiles = (files) => {
+  const validateFiles = (files) => {
     const validFiles = [];
     const maxSize = 16 * 1024 * 1024;
     const allowedTypes = [
@@ -244,44 +269,92 @@ const OrderCreate = () => {
       validFiles.push(file);
     }
 
-    setFormData((prev) => ({
-      ...prev,
-      media_files: [...prev.media_files, ...validFiles],
-    }));
+    return validFiles;
   };
 
-  const handleFileChange = (e) => {
+  const fileKey = (file) => `${file?.name || ""}:${file?.size || 0}:${file?.lastModified || 0}`;
+
+  const queueOrderUploads = (files) => {
+    const validFiles = validateFiles(files);
+    if (!validFiles.length) return;
+
+    const newOrderFiles = validFiles.map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+      status: "uploading",
+      url: null,
+      error: null,
+    }));
+    setOrderFiles((prev) => [...prev, ...newOrderFiles]);
+
+    validFiles.forEach(async (file) => {
+      try {
+        const key = fileKey(file);
+        const res = await uploadApi.upload([file]);
+        const uploaded = res.data.uploaded && res.data.uploaded[0];
+        if (removedOrderUploadKeysRef.current.has(key)) return;
+
+        if (uploaded && uploaded.url) {
+          setOrderFiles((prev) =>
+            prev.map((f) => (f.file === file ? { ...f, status: "done", url: uploaded.url } : f)),
+          );
+              setUploadedOrderMedia((prev) => {
+                const urls = prev.map((p) => p.url).filter(Boolean);
+                if (urls.includes(uploaded.url)) return prev;
+                return [...prev, uploaded];
+              });
+        } else {
+          setOrderFiles((prev) =>
+            prev.map((f) =>
+              f.file === file ? { ...f, status: "error", error: "Upload failed" } : f,
+            ),
+          );
+        }
+      } catch (err) {
+        console.error("Upload error:", err);
+        setOrderFiles((prev) =>
+          prev.map((f) =>
+            f.file === file ? { ...f, status: "error", error: "Upload failed" } : f,
+          ),
+        );
+        showNotification("Order file upload failed", "error");
+      }
+    });
+  };
+
+  // Upload order-level files before save
+  const handleFileChange = async (e) => {
     const files = e.target.files;
     if (files) {
-      validateAndAddFiles(Array.from(files));
-      e.target.value = ""; // reset input
-    }
-  };
-
-  const handlePaste = (e) => {
-    e.preventDefault();
-    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
-    const files = [];
-    for (const item of items) {
-      if (item.type.startsWith("image/") || item.type.startsWith("video/")) {
-        const file = item.getAsFile();
-        if (file) files.push(file);
-      }
-    }
-    if (files.length > 0) {
-      validateAndAddFiles(files);
+      queueOrderUploads(Array.from(files));
+      e.target.value = "";
     }
   };
 
   const removeFile = (index) => {
-    setFormData((prev) => ({
-      ...prev,
-      media_files: prev.media_files.filter((_, i) => i !== index),
-    }));
+    setOrderFiles((prev) => {
+      const target = prev[index];
+      if (target?.file) removedOrderUploadKeysRef.current.add(fileKey(target.file));
+      if (target?.preview) {
+        try {
+          URL.revokeObjectURL(target.preview);
+        } catch {
+          // ignore
+        }
+      }
+
+      const targetUrl = target?.url;
+      if (targetUrl) {
+        setUploadedOrderMedia((prevMedia) => prevMedia.filter((m) => m.url !== targetUrl));
+      }
+
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
-  const renderFilePreview = (file, index) => {
-    const url = URL.createObjectURL(file);
+  const renderFilePreview = (fileObj, index) => {
+    // fileObj: { file, preview, status, url, error }
+    const { file, preview, status, url, error } = fileObj;
     const isImage = file.type.startsWith("image/");
     return (
       <div
@@ -290,10 +363,9 @@ const OrderCreate = () => {
       >
         {isImage ? (
           <img
-            src={url}
+            src={status === 'done' && url ? url : preview}
             alt={file.name}
             className="w-full h-16 object-cover rounded"
-            onLoad={(e) => URL.revokeObjectURL(e.target.src)}
           />
         ) : (
           <div className="w-full h-16 bg-dark-700 rounded flex items-center justify-center">
@@ -313,6 +385,22 @@ const OrderCreate = () => {
           </div>
         )}
         <p className="text-xs text-dark-400 truncate mt-1">{file.name}</p>
+        {/* Upload status indicator */}
+        {status === 'uploading' && (
+          <div className="absolute top-1 left-1 bg-yellow-400 text-white rounded-full p-1 animate-spin">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" strokeWidth="4" /></svg>
+          </div>
+        )}
+        {status === 'done' && (
+          <div className="absolute top-1 left-1 bg-green-500 text-white rounded-full p-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          </div>
+        )}
+        {status === 'error' && (
+          <div className="absolute top-1 left-1 bg-red-500 text-white rounded-full p-1" title={error || 'Upload failed'}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </div>
+        )}
         <button
           type="button"
           onClick={() => removeFile(index)}
@@ -337,18 +425,21 @@ const OrderCreate = () => {
     );
   };
 
+  // Ensure temp_id is generated and available before any upload or file change
   const handleAddItem = (e) => {
     if (e) e.preventDefault();
     if (newItem.size && newItem.quantity > 0) {
-      const tempId = `temp-${tempIdCounter}`;
-      setTempIdCounter((prev) => prev + 1);
-      setFormData((prev) => ({
-        ...prev,
-        items: [
-          ...prev.items,
-          { ...newItem, position: prev.items.length, temp_id: tempId },
-        ],
-      }));
+      setFormData((prev) => {
+        const tempId = `temp-${tempIdCounter}`;
+        setTempIdCounter((prevCounter) => prevCounter + 1);
+        return {
+          ...prev,
+          items: [
+            ...prev.items,
+            { ...newItem, position: prev.items.length, temp_id: tempId },
+          ],
+        };
+      });
       setNewItem({
         size: "M",
         quantity: 1,
@@ -363,14 +454,31 @@ const OrderCreate = () => {
     // Animate removal
     setRemovingIndex(index);
     setTimeout(() => {
-      setFormData((prev) => ({
-        ...prev,
-        items: prev.items.filter((_, i) => i !== index),
-      }));
+      setFormData((prev) => {
+        const removed = prev.items[index];
+        const key = removed.id || removed.temp_id;
+        return {
+          ...prev,
+          items: prev.items.filter((_, i) => i !== index),
+        };
+      });
       setItemFiles((prev) => {
         const newFiles = { ...prev };
-        delete newFiles[index];
+        const removedKey = formData.items[index]?.id || formData.items[index]?.temp_id;
+        if (removedKey) delete newFiles[removedKey];
         return newFiles;
+      });
+      setUploadedItemMedia((prev) => {
+        const newMedia = { ...prev };
+        const removedKey = formData.items[index]?.id || formData.items[index]?.temp_id;
+        if (removedKey) delete newMedia[removedKey];
+        return newMedia;
+      });
+      setItemExistingImages((prev) => {
+        const newImgs = { ...prev };
+        const removedKey = formData.items[index]?.id || formData.items[index]?.temp_id;
+        if (removedKey) delete newImgs[removedKey];
+        return newImgs;
       });
       setRemovingIndex(null);
     }, 300);
@@ -389,29 +497,7 @@ const OrderCreate = () => {
       ...formData,
       items: newItems,
     });
-
-    // Reorder itemFiles to match new items order using stable keys
-    setItemFiles((prev) => {
-      // Build a map from item key to its files
-      const filesByKey = {};
-      oldItems.forEach((item, oldIdx) => {
-        const key = item.id || item.temp_id;
-        if (prev[oldIdx]) {
-          filesByKey[key] = prev[oldIdx];
-        }
-      });
-
-      // Create new itemFiles aligned with newItems order
-      const newItemFiles = {};
-      newItems.forEach((item, newIdx) => {
-        const key = item.id || item.temp_id;
-        if (filesByKey[key]) {
-          newItemFiles[newIdx] = filesByKey[key];
-        }
-      });
-
-      return newItemFiles;
-    });
+    // No need to reorder itemFiles/uploadedItemMedia/itemExistingImages, as they are keyed by stable key
   };
 
   // const handleItemFileChange = (itemIndex, side, files) => {
@@ -425,40 +511,159 @@ const OrderCreate = () => {
   //     }
   //   }))
   // }
+  // Upload item-level files before save
+  // Show preview immediately, upload in background, update state with returned URLs
   const handleItemFileChange = (itemIndex, side, files) => {
+    // Always get the latest temp_id/id from formData
+    const item = formData.items[itemIndex];
+    let key = item.id || item.temp_id;
+    // normalize key to string to avoid numeric/object keys mismatch
+    if (key !== null && key !== undefined) key = String(key);
+    // If temp_id is missing (shouldn't happen), generate one and update formData
+    if (!key) {
+      const tempId = `temp-${tempIdCounter}`;
+      setTempIdCounter((prev) => prev + 1);
+      key = tempId;
+      setFormData((prev) => {
+        const items = [...prev.items];
+        items[itemIndex] = { ...items[itemIndex], temp_id: tempId };
+        return { ...prev, items };
+      });
+    }
     const incomingFiles = Array.from(files);
-
-    setItemFiles((prev) => {
-      const currentSideFiles = prev[itemIndex]?.[side] || [];
-
-      return {
+    // Wrap files with metadata so we can track per-file status and replace them with uploaded URLs
+    const wrappedFiles = incomingFiles.map((f) => ({
+      file: f,
+      preview: URL.createObjectURL(f),
+      status: "uploading",
+      _sig: fileKey(f),
+    }));
+    // Show preview immediately
+    setItemFiles((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || {}),
+        [side]: [...(prev[key]?.[side] || []), ...wrappedFiles],
+      },
+    }));
+    // Set uploading state
+    setItemUploadStatus((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] || {}), [side]: true },
+    }));
+    // Upload in background
+    if (incomingFiles.length > 0) {
+      uploadApi
+        .upload(incomingFiles, { side, context: "item", context_id: key })
+        .then((res) => {
+          console.log("UPLOAD API RESPONSE:", res);
+          const uploadedRaw = res?.data?.uploaded || [];
+          console.log("UPLOAD API uploaded field:", uploadedRaw);
+          // Normalize to array of URLs supporting various backend shapes
+          const urls = uploadedRaw
+            .map((u) => u?.url || u?.secure_url || u?.file_url || u?.filePath || null)
+            .filter((x) => typeof x === "string" && x.trim());
+          if (!urls.length) {
+            console.warn("No URL found in upload response for item", { key, side, uploadedRaw });
+          }
+          setUploadedItemMedia((prev) => {
+            const existingSide = (prev[key] && Array.isArray(prev[key][side]) ? prev[key][side] : []);
+            const combined = Array.from(new Set([...existingSide, ...urls]));
+            const next = {
+              ...prev,
+              [key]: {
+                ...(prev[key] || {}),
+                [side]: combined,
+              },
+            };
+            console.log('uploadedItemMedia updated for', key, next[key]);
+            return next;
+          });
+          // Replace corresponding uploading file entries with uploaded URL previews to avoid duplication
+          setItemFiles((prev) => {
+            const prevForKey = prev[key] || {};
+            const existing = Array.isArray(prevForKey[side]) ? prevForKey[side] : [];
+            // Map incoming wrappedFiles to their signatures
+            const sigToUrl = {};
+            wrappedFiles.forEach((wf, idx) => {
+              const url = urls[idx];
+              if (url) sigToUrl[wf._sig] = url;
+            });
+            const usedUrls = new Set();
+            const newArray = existing.map((entry) => {
+              if (entry && entry.file && entry._sig && sigToUrl[entry._sig]) {
+                const url = sigToUrl[entry._sig];
+                usedUrls.add(url);
+                return { file: null, preview: url, status: 'done', url };
+              }
+              return entry;
+            });
+            // Append any unmatched urls (if upload returned more urls than matched files)
+            const existingUrls = newArray.map((f) => f?.url || f?.preview).filter(Boolean);
+            const urlPreviews = urls.map((u) => ({ file: null, preview: u, status: 'done', url: u }));
+            const newPreviews = urlPreviews.filter((p) => !existingUrls.includes(p.url));
+            return {
+              ...prev,
+              [key]: {
+                ...prevForKey,
+                [side]: [...newArray, ...newPreviews],
+              },
+            };
+          });
+        })
+        .catch((err) => {
+          console.error('UPLOAD API ERROR:', err);
+          showNotification("Item file upload failed", "error");
+        })
+        .finally(() => {
+          setItemUploadStatus((prev) => ({
+            ...prev,
+            [key]: { ...(prev[key] || {}), [side]: false },
+          }));
+        });
+    } else {
+      setItemUploadStatus((prev) => ({
         ...prev,
-        [itemIndex]: {
-          ...(prev[itemIndex] || {}),
-          [side]: [...currentSideFiles, ...incomingFiles],
-        },
-      };
-    });
+        [key]: { ...(prev[key] || {}), [side]: false },
+      }));
+    }
   };
   console.log("validFiles >> ", itemFiles);
   // Remove existing image (mark for deletion on save)
   const handleRemoveExistingImage = (itemIndex, side, imageId) => {
     if (!imageId) return;
+    const item = formData.items[itemIndex];
+    const key = item.id || item.temp_id;
+    const imageObj = (itemExistingImages[key]?.[side] || []).find((img) => img.id === imageId);
+    const imageUrl = imageObj?.file_url || imageObj?.file_path;
     setItemExistingImages((prev) => {
-      const current = prev[itemIndex]?.[side] || [];
+      const current = prev[key]?.[side] || [];
       return {
         ...prev,
-        [itemIndex]: {
-          ...prev[itemIndex],
+        [key]: {
+          ...prev[key],
           [side]: current.filter((img) => img.id !== imageId),
         },
       };
     });
+    if (imageUrl) {
+      setUploadedItemMedia((prev) => {
+        const current = prev[key] || {};
+        const currentSide = Array.isArray(current[side]) ? current[side] : [];
+        return {
+          ...prev,
+          [key]: {
+            ...current,
+            [side]: currentSide.filter((u) => u !== imageUrl),
+          },
+        };
+      });
+    }
     setRemovedExistingImages((prev) => {
-      const itemRemovals = prev[itemIndex] || { front: [], back: [] };
+      const itemRemovals = prev[key] || { front: [], back: [] };
       return {
         ...prev,
-        [itemIndex]: {
+        [key]: {
           ...itemRemovals,
           [side]: [...(itemRemovals[side] || []), imageId],
         },
@@ -469,7 +674,20 @@ const OrderCreate = () => {
   console.log("rmId >> ", removedExistingImages);
 
   const handleSubmit = async (e) => {
+    // (debug logs moved later to reflect merged preview fallbacks)
+
     e.preventDefault();
+    // Prevent submission if any order-level file or item image is still uploading
+    const uploadingOrderFiles = orderFiles.some(f => f.status === 'uploading');
+    // Check if any item image is uploading
+    const uploadingItemImages = Object.values(itemUploadStatus).some(
+      (status) => status && (status.front || status.back)
+    );
+    if (uploadingOrderFiles || uploadingItemImages) {
+      showNotification("Please wait for all images and attachments to finish uploading before saving.", "error");
+      setSaving(false);
+      return;
+    }
     setSaving(true);
     // submitAction is set by the button's onClick
 
@@ -483,29 +701,89 @@ const OrderCreate = () => {
       ) {
         showNotification("Please fill all required fields", "error");
         setSaving(false);
-        setSubmittingButton(null);
         return;
       }
 
-      // Convert IDs to names
-      const division = DIVISION_OPTIONS.find(
-        (div) => div.id === formData.division_id,
-      );
-      const district = DISTRICT_OPTIONS.find(
-        (d) => d.id === formData.district_id,
-      );
+      // Always include id and temp_id for mapping
+      const division = DIVISION_OPTIONS.find((div) => div.id === formData.division_id);
+      const district = DISTRICT_OPTIONS.find((d) => d.id === formData.district_id);
       let upazila_zone = "";
-      if (
-        typeof formData.upazila_id === "object" &&
-        formData.upazila_id !== null
-      ) {
+      if (typeof formData.upazila_id === "object" && formData.upazila_id !== null) {
         upazila_zone = formData.upazila_id.name || "";
       } else if (formData.upazila_id) {
-        const upazila = filteredFormUpazilas.find(
-          (u) => u.id === formData.upazila_id,
-        );
+        const upazila = filteredFormUpazilas.find((u) => u.id === formData.upazila_id);
         upazila_zone = upazila?.name || "";
       }
+
+      // Prepare media URLs for order and items
+      // Ensure uploadedItemMedia has fallback data from itemFiles previews
+      const ensureUploadedFromPreviews = () => {
+        const updated = {};
+        formData.items.forEach((item) => {
+          const rawKey = item.id || item.temp_id;
+          const k = rawKey !== null && rawKey !== undefined ? String(rawKey) : rawKey;
+          const existing = uploadedItemMedia[k] || uploadedItemMedia[rawKey];
+          const previews = (itemFiles && (itemFiles[k] || itemFiles[rawKey])) || {};
+          const extract = (arr) =>
+            Array.isArray(arr)
+              ? arr.map((f) => f.url || f.preview).filter((u) => typeof u === 'string' && u.trim())
+              : [];
+          const front = extract(previews.front);
+          const back = extract(previews.back);
+          if ((!(existing && (Array.isArray(existing.front) || Array.isArray(existing.back)))) && (front.length || back.length)) {
+            updated[k] = { ...(existing || {}), front: front.length ? front : [], back: back.length ? back : [] };
+          }
+        });
+        if (Object.keys(updated).length) {
+          // Merge into state with deduplication
+          setUploadedItemMedia((prev) => {
+            const merged = { ...prev };
+            Object.keys(updated).forEach((k) => {
+              const prevFront = Array.isArray(prev[k]?.front) ? prev[k].front : [];
+              const prevBack = Array.isArray(prev[k]?.back) ? prev[k].back : [];
+              const newFront = Array.isArray(updated[k].front) ? updated[k].front : [];
+              const newBack = Array.isArray(updated[k].back) ? updated[k].back : [];
+              merged[k] = {
+                ...(prev[k] || {}),
+                front: Array.from(new Set([...prevFront, ...newFront])),
+                back: Array.from(new Set([...prevBack, ...newBack])),
+              };
+            });
+            return merged;
+          });
+          // Return merged local copy for immediate use below
+          const localMerged = { ...uploadedItemMedia };
+          Object.keys(updated).forEach((k) => {
+            const prevFront = Array.isArray(uploadedItemMedia[k]?.front) ? uploadedItemMedia[k].front : [];
+            const prevBack = Array.isArray(uploadedItemMedia[k]?.back) ? uploadedItemMedia[k].back : [];
+            const newFront = Array.isArray(updated[k].front) ? updated[k].front : [];
+            const newBack = Array.isArray(updated[k].back) ? updated[k].back : [];
+            localMerged[k] = {
+              ...(uploadedItemMedia[k] || {}),
+              front: Array.from(new Set([...prevFront, ...newFront])),
+              back: Array.from(new Set([...prevBack, ...newBack])),
+            };
+          });
+          return localMerged;
+        }
+        return uploadedItemMedia;
+      };
+      const effectiveUploadedItemMedia = ensureUploadedFromPreviews();
+      console.log('DEBUG: uploadedItemMedia before submit (effective):', effectiveUploadedItemMedia);
+      formData.items.forEach((item, idx) => {
+        const key = item.id || item.temp_id;
+        console.log(`DEBUG: item[${idx}] key:`, key, 'mediaObj:', effectiveUploadedItemMedia[String(key)] || effectiveUploadedItemMedia[key]);
+      });
+      const existingAttachmentUrls = (existingMedia || [])
+        .filter((m) => !removedExistingAttachments.includes(m.id))
+        .map((m) => m.file_url || m.file_path)
+        .filter((u) => typeof u === "string" && u.trim());
+      const newlyUploadedAttachmentUrls = (uploadedOrderMedia || [])
+        .map((m) => m.url)
+        .filter((u) => typeof u === "string" && u.trim());
+      const combinedAttachmentUrls = Array.from(
+        new Set([...existingAttachmentUrls, ...newlyUploadedAttachmentUrls]),
+      );
 
       const orderData = {
         customer_name: formData.customer_name,
@@ -518,112 +796,87 @@ const OrderCreate = () => {
         price: formData.price,
         payment_type: formData.payment_type,
         courier_parcel_id: formData.courier_parcel_id,
-        items: formData.items.map((item) => ({
-          size: item.size,
-          quantity: item.quantity,
-          position: item.position,
-          note: item.note,
-          color: item.color,
-          design: item.design,
-        })),
+        media_urls: combinedAttachmentUrls,
+        items: formData.items.map((item) => {
+            const key = item.id || item.temp_id;
+            const k = key !== null && key !== undefined ? String(key) : key;
+            const mediaObj = (effectiveUploadedItemMedia && (effectiveUploadedItemMedia[k] || effectiveUploadedItemMedia[key])) || {};
+            const filesForKey = (itemFiles && (itemFiles[k] || itemFiles[key])) || {};
+            const extractUrlsFromFiles = (arr) =>
+              Array.isArray(arr)
+                ? arr
+                    .map((f) => f.url || f.preview)
+                    .filter((u) => typeof u === "string" && u.trim())
+                : [];
+            let frontArr = Array.isArray(mediaObj.front) && mediaObj.front.length
+              ? mediaObj.front
+              : extractUrlsFromFiles(filesForKey.front) || [];
+            let backArr = Array.isArray(mediaObj.back) && mediaObj.back.length
+              ? mediaObj.back
+              : extractUrlsFromFiles(filesForKey.back) || [];
+            // Deduplicate final arrays
+            frontArr = Array.from(new Set(frontArr));
+            backArr = Array.from(new Set(backArr));
+            return {
+              ...item,
+              media_urls: {
+                front: frontArr,
+                back: backArr,
+              },
+            };
+        }),
       };
+      console.log('OrderData being submitted:', orderData);
 
-      const mediaFiles = formData.media_files;
 
       let orderId;
       let savedItems;
       if (isEditMode) {
-        // Update existing order
         const res = await ordersApi.update(id, orderData);
         orderId = id;
         savedItems = res.data.items || [];
       } else {
-        // Create new order
         const res = await ordersApi.create(orderData);
         orderId = res.data.id;
         savedItems = res.data.items || [];
       }
 
-      // Upload order-level media (for both create and edit)
-      if (mediaFiles && mediaFiles.length > 0) {
-        try {
-          // await mediaApi.uploadDesignFiles(orderId, mediaFiles);
-        } catch (err) {
-          console.error("Media upload failed:", err);
-          showNotification(
-            isEditMode
-              ? "Order updated but media upload failed."
-              : "Order created but media upload failed.",
-            "error",
-          );
+      // Remove deleted item-level images (if any)
+      for (const key of Object.keys(removedExistingImages || {})) {
+        const entry = removedExistingImages[key] || {};
+        if (Array.isArray(entry.front)) {
+          for (const rmId of entry.front) {
+            try {
+              await mediaApi.delete(rmId);
+            } catch (err) {
+              console.error("Failed to delete front image:", err);
+            }
+          }
         }
-      }
-      console.log(
-        "Uploading item-specific files...",
-        formData.items,
-        formData.items.length > 0,
-        savedItems,
-      );
-      // Upload item-specific files (for both create and edit)
-      if (formData.items && formData.items.length > 0) {
-        for (let idx = 0; idx < formData.items.length; idx++) {
-          const savedItem = savedItems[idx];
-          // if (!savedItem || !savedItem.id) continue;
-          console.log("Uploading item-specific files...", savedItem);
-          const filesForItem = itemFiles[idx];
-          if (filesForItem) {
-            if (filesForItem.front && filesForItem.front.length > 0) {
-              try {
-                await mediaApi.upload(
-                  orderId,
-                  filesForItem.front,
-                  savedItem.id,
-                  "front",
-                );
-              } catch (uploadErr) {
-                console.error("Front image upload failed:", uploadErr);
-              }
-            }
-            if (filesForItem.back && filesForItem.back.length > 0) {
-              try {
-                await mediaApi.upload(
-                  orderId,
-                  filesForItem.back,
-                  savedItem.id,
-                  "back",
-                );
-              } catch (uploadErr) {
-                console.error("Back image upload failed:", uploadErr);
-              }
-            }
-            if (filesForItem.both && filesForItem.both.length > 0) {
-              try {
-                await mediaApi.upload(
-                  orderId,
-                  filesForItem.back,
-                  savedItem.id,
-                  "both",
-                );
-              } catch (uploadErr) {
-                console.error("Back image upload failed:", uploadErr);
-              }
+        if (Array.isArray(entry.back)) {
+          for (const rmId of entry.back) {
+            try {
+              await mediaApi.delete(rmId);
+            } catch (err) {
+              console.error("Failed to delete back image:", err);
             }
           }
         }
       }
-      for (let rmId of removedExistingImages[0].front) {
-        console.log("Removing existing image...", rmId);
-        await mediaApi.delete(rmId);
-      }
-      for (let rmId of removedExistingImages[0].back) {
-        console.log("Removing existing image...", rmId);
-        await mediaApi.delete(rmId);
+
+      // Remove deleted order-level attachments (if any)
+      if (Array.isArray(removedExistingAttachments) && removedExistingAttachments.length) {
+        for (const rmId of removedExistingAttachments) {
+          try {
+            await mediaApi.delete(rmId);
+          } catch (err) {
+            console.error("Failed to delete order-level attachment:", err);
+          }
+        }
       }
 
       showNotification(
-        isEditMode
-          ? "Order updated successfully!"
-          : "Order created successfully!",
+        isEditMode ? "Order updated successfully!" : "Order created successfully!",
       );
 
       if (submitAction === "createAnother" && !isEditMode) {
@@ -686,6 +939,7 @@ const OrderCreate = () => {
     label,
     icon,
     color,
+    uploading,
   }) => {
     const dropZoneRef = useRef(null);
 
@@ -798,7 +1052,7 @@ const OrderCreate = () => {
             className="cursor-pointer block"
           >
             {totalImages > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 relative">
                 {/* Existing images */}
                 {existingImages.map((img, i) => (
                   <div
@@ -846,53 +1100,78 @@ const OrderCreate = () => {
                     </div>
                   </div>
                 ))}
-                {/* New files */}
-                {files.map((file, i) => (
-                  <div
-                    key={`new-${i}`}
-                    className="relative group aspect-square rounded-lg overflow-hidden border-2 border-dark-700 hover:border-primary-500/50 transition-all"
-                  >
-                    <img
-                      src={URL.createObjectURL(file)}
-                      alt=""
-                      className="w-full h-full object-cover"
-                      onClick={() =>
-                        setLightbox({
-                          open: true,
-                          itemIndex,
-                          side,
-                          imageIndex: i + existingImages.length,
-                          isExisting: false,
-                        })
-                      }
-                    />
-                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        icon={<ArrowDownIcon className="w-4 h-4" />}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          const link = document.createElement("a");
-                          link.href = URL.createObjectURL(file);
-                          link.download = file.name;
-                          link.click();
-                        }}
-                        title="Download"
+                {/* New files (deduplicated) */}
+                {(() => {
+                  const seen = new Set();
+                  const deduped = [];
+                  for (const file of files) {
+                    const key = file?.url || file?.preview || (file?.file ? `${file.file.name}:${file.file.size}` : null) || (typeof file === 'string' ? file : null);
+                    if (key && seen.has(key)) continue;
+                    if (key) seen.add(key);
+                    deduped.push(file);
+                  }
+                  return deduped.map((file, i) => (
+                    <div
+                      key={`new-${i}`}
+                      className="relative group aspect-square rounded-lg overflow-hidden border-2 border-dark-700 hover:border-primary-500/50 transition-all"
+                    >
+                      <img
+                        src={
+                          file && file.preview
+                            ? file.preview
+                            : file && file.file
+                            ? URL.createObjectURL(file.file)
+                            : typeof file === "string"
+                            ? file
+                            : URL.createObjectURL(file)
+                        }
+                        alt={file?.name || ""}
+                        className="w-full h-full object-cover"
+                        onClick={() =>
+                          setLightbox({
+                            open: true,
+                            itemIndex,
+                            side,
+                            imageIndex: i + existingImages.length,
+                            isExisting: false,
+                          })
+                        }
                       />
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        icon={<TrashIcon className="w-4 h-4" />}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          onRemoveFile(i);
-                        }}
-                        title="Remove"
-                      />
+                      {/* Show spinner only on the specific uploading file */}
+                      {file?.status === 'uploading' && (
+                        <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/30">
+                          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-yellow-400"></div>
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          icon={<ArrowDownIcon className="w-4 h-4" />}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            const link = document.createElement("a");
+                            const href = file?.url || file?.preview || (file?.file ? URL.createObjectURL(file.file) : (typeof file === 'string' ? file : URL.createObjectURL(file)));
+                            link.href = href;
+                            link.download = file?.name || `download-${i}`;
+                            link.click();
+                          }}
+                          title="Download"
+                        />
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          icon={<TrashIcon className="w-4 h-4" />}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            onRemoveFile(i);
+                          }}
+                          title="Remove"
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ));
+                })()}
                 {/* Add more slot */}
                 <div className="aspect-square rounded-lg border-2 border-dashed border-dark-500 flex items-center justify-center hover:border-primary-500 hover:bg-primary-500/10 transition-all">
                   <div className="text-center p-2">
@@ -927,7 +1206,8 @@ const OrderCreate = () => {
     <div className="space-y-6">
       {notification && (
         <div
-          className={`fixed top-4 right-4 p-4 rounded-lg border ${notification.type === "error" ? "bg-red-900/30 border-red-700 text-red-300" : "bg-green-900/30 border-green-700 text-green-300"}`}
+          className={`fixed top-4 right-4 p-4 rounded-lg border z-[9999] shadow-lg ${notification.type === "error" ? "bg-red-900/30 border-red-700 text-red-300" : "bg-green-900/30 border-green-700 text-green-300"}`}
+          style={{ zIndex: 9999 }}
         >
           {notification.message}
         </div>
@@ -1173,7 +1453,7 @@ const OrderCreate = () => {
               onDrop={(e) => {
                 e.preventDefault();
                 const files = Array.from(e.dataTransfer.files);
-                validateAndAddFiles(files);
+                queueOrderUploads(files);
               }}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1209,7 +1489,7 @@ const OrderCreate = () => {
                   }
                 }
                 if (files.length > 0) {
-                  validateAndAddFiles(files);
+                  queueOrderUploads(files);
                 }
               }}
             >
@@ -1245,14 +1525,14 @@ const OrderCreate = () => {
               </p>
             </div>
 
-            {formData.media_files && formData.media_files.length > 0 && (
+            {orderFiles && orderFiles.length > 0 && (
               <div className="mt-4">
                 <p className="text-sm text-dark-300 mb-2">
-                  Selected Files ({formData.media_files.length}):
+                  Selected Files ({orderFiles.length}):
                 </p>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {formData.media_files.map((file, index) =>
-                    renderFilePreview(file, index),
+                  {orderFiles.map((fileObj, index) =>
+                    renderFilePreview(fileObj, index),
                   )}
                 </div>
               </div>
@@ -1262,14 +1542,25 @@ const OrderCreate = () => {
             {existingMedia && existingMedia.length > 0 && (
               <div className="mt-6">
                 <p className="text-sm text-dark-300 mb-2">
-                  Existing Attachments ({existingMedia.length}):
+                  Existing Attachments ({existingMedia.length - removedExistingAttachments.length}):
                 </p>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {existingMedia.map((file) => (
+                  {existingMedia.filter(file => !removedExistingAttachments.includes(file.id)).map((file) => (
                     <div
                       key={file.id}
                       className="relative group rounded-lg overflow-hidden border border-dark-700/50"
                     >
+                      {/* Always visible Remove button */}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveExistingAttachment(file.id)}
+                        className="absolute top-1 right-1 z-10 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-lg"
+                        title="Remove"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
                       {file.file_type === "Image" ||
                       file.file_type === "image" ? (
                         <img
@@ -1386,8 +1677,8 @@ const OrderCreate = () => {
                                 {...provided.draggableProps}
                                 className={`
                                   transition-all duration-300
-                                  ${snapshot.isDragging ? "scale-[1.02] shadow-glow rotate-1" : ""}
                                   ${removingIndex === idx ? "opacity-0 scale-95" : "opacity-100"}
+                                  ${snapshot.isDragging ? "scale-[1.02] shadow-glow rotate-1" : ""}
                                 `}
                                 style={provided.draggableProps.style || {}}
                               >
@@ -1568,9 +1859,9 @@ const OrderCreate = () => {
                                     <UploadZone
                                       itemIndex={idx}
                                       side="front"
-                                      files={itemFiles[idx]?.front || []}
+                                      files={itemFiles[itemKey]?.front || []}
                                       existingImages={
-                                        itemExistingImages[idx]?.front || []
+                                        itemExistingImages[itemKey]?.front || []
                                       }
                                       onFileChange={(files) =>
                                         handleItemFileChange(
@@ -1581,9 +1872,9 @@ const OrderCreate = () => {
                                       }
                                       onRemoveFile={(fileIndex) => {
                                         const newFiles = { ...itemFiles };
-                                        if (!newFiles[idx]) newFiles[idx] = {};
-                                        newFiles[idx].front = newFiles[
-                                          idx
+                                        if (!newFiles[itemKey]) newFiles[itemKey] = {};
+                                        newFiles[itemKey].front = newFiles[
+                                          itemKey
                                         ].front.filter(
                                           (_, i) => i !== fileIndex,
                                         );
@@ -1601,22 +1892,23 @@ const OrderCreate = () => {
                                         <SunIcon className="w-8 h-8 text-cyan-400" />
                                       }
                                       color="cyan"
+                                      uploading={!!itemUploadStatus[itemKey]?.front}
                                     />
                                     <UploadZone
                                       itemIndex={idx}
                                       side="back"
-                                      files={itemFiles[idx]?.back || []}
+                                      files={itemFiles[itemKey]?.back || []}
                                       existingImages={
-                                        itemExistingImages[idx]?.back || []
+                                        itemExistingImages[itemKey]?.back || []
                                       }
                                       onFileChange={(files) =>
                                         handleItemFileChange(idx, "back", files)
                                       }
                                       onRemoveFile={(fileIndex) => {
                                         const newFiles = { ...itemFiles };
-                                        if (!newFiles[idx]) newFiles[idx] = {};
-                                        newFiles[idx].back = newFiles[
-                                          idx
+                                        if (!newFiles[itemKey]) newFiles[itemKey] = {};
+                                        newFiles[itemKey].back = newFiles[
+                                          itemKey
                                         ].back.filter(
                                           (_, i) => i !== fileIndex,
                                         );
@@ -1634,6 +1926,7 @@ const OrderCreate = () => {
                                         <MoonIcon className="w-8 h-8 text-pink-400" />
                                       }
                                       color="pink"
+                                      uploading={!!itemUploadStatus[itemKey]?.back}
                                     />
                                   </div>
                                 </Card>
@@ -1652,34 +1945,54 @@ const OrderCreate = () => {
         )}
 
         <div className="flex justify-end gap-4">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            disabled={saving}
-            className="px-6 py-3 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors disabled:opacity-50 min-w-[120px]"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            onClick={() => setSubmitAction("save")}
-            disabled={saving}
-            className="px-6 py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-800 text-white rounded-lg transition-colors disabled:opacity-50 min-w-[120px]"
-          >
-            {saving && submitAction === "save" ? "Saving..." : "Save"}
-          </button>
-          {!isEditMode && (
-            <button
-              type="submit"
-              onClick={() => setSubmitAction("createAnother")}
-              disabled={saving}
-              className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white rounded-lg transition-colors disabled:opacity-50 min-w-[160px]"
-            >
-              {saving && submitAction === "createAnother"
-                ? "Saving..."
-                : "Save & Create New"}
-            </button>
-          )}
+          {/** Disable save/create if any item image is uploading */}
+          {(() => {
+            let anyUploading = false;
+            for (const key in itemUploadStatus) {
+              if (itemUploadStatus[key]?.front || itemUploadStatus[key]?.back) {
+                anyUploading = true;
+                break;
+              }
+            }
+            return (
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigate(-1)}
+                  disabled={saving || anyUploading}
+                  className="px-6 py-3 bg-dark-700 hover:bg-dark-600 text-white rounded-lg transition-colors disabled:opacity-50 min-w-[120px]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  onClick={() => setSubmitAction("save")}
+                  disabled={saving || anyUploading}
+                  className="px-6 py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-800 text-white rounded-lg transition-colors disabled:opacity-50 min-w-[120px]"
+                >
+                  {saving && submitAction === "save"
+                    ? "Saving..."
+                    : anyUploading
+                    ? "Uploading..."
+                    : "Save"}
+                </button>
+                {!isEditMode && (
+                  <button
+                    type="submit"
+                    onClick={() => setSubmitAction("createAnother")}
+                    disabled={saving || anyUploading}
+                    className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white rounded-lg transition-colors disabled:opacity-50 min-w-[160px]"
+                  >
+                    {saving && submitAction === "createAnother"
+                      ? "Saving..."
+                      : anyUploading
+                      ? "Uploading..."
+                      : "Save & Create New"}
+                  </button>
+                )}
+              </>
+            );
+          })()}
         </div>
       </form>
 

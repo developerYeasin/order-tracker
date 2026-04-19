@@ -15,8 +15,176 @@ const SteadfastService = require("../services/steadfastService");
 const config = require("../config");
 const { adminRequired, tokenRequired } = require("../middleware/auth");
 
+
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+// Generic upload endpoint for multiple images/files
+router.post("/uploads", upload.array("files"), async (req, res) => {
+  try {
+    console.log('--- /uploads called ---');
+    console.log('req.files:', req.files);
+    console.log('req.body:', req.body);
+    const files = req.files || [];
+    const context = req.body.context || null; // e.g., 'order', 'item', etc.
+    let contextId = req.body.context_id || null;
+    const side = req.body.side || null;
+
+    // If context_id is a temporary ID from frontend (e.g. "temp-0"), treat as URL-only mode
+    // to avoid database errors when trying to associate with non-existent IDs.
+    if (contextId && String(contextId).startsWith('temp-')) {
+      contextId = null;
+    }
+
+    if (!files.length) {
+      console.warn('No files uploaded');
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
+    // Optionally associate with order/item/media if context is provided
+    let uploaded = [];
+    const getFileType = (filename) => {
+      const ext = filename.split(".").pop().toLowerCase();
+      if (["mp4", "mov", "avi", "mkv", "wmv"].includes(ext)) return "Video";
+      if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(ext)) return "Image";
+      return "File";
+    };
+    // If uploading for an item, look up the order_id for the item (for direct-save mode)
+    let itemOrderId = null;
+    if (context === "item" && contextId) {
+      const item = await OrderItem.findByPk(contextId);
+      if (item) itemOrderId = item.order_id;
+    }
+
+    if (config.cloudinary.enabled) {
+      const cloudinary = require("cloudinary").v2;
+      cloudinary.config({
+        cloud_name: config.cloudinary.cloudName,
+        api_key: config.cloudinary.apiKey,
+        api_secret: config.cloudinary.apiSecret,
+      });
+      const uploadFile = (file, folder) =>
+        new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { folder, resource_type: "auto" },
+            (error, result) => {
+              if (error) return reject(error);
+              resolve(result);
+            },
+          );
+          const bufferStream = require("stream").PassThrough();
+          bufferStream.end(file.buffer);
+          bufferStream.pipe(stream);
+        });
+      for (const file of files) {
+        console.log('Processing file:', file.originalname);
+        const isAllowed = allowedFile(file.originalname);
+        console.log('allowedFile:', isAllowed, 'for', file.originalname);
+        if (!isAllowed) continue;
+        let folder = "order_tracker/uploads";
+        if (context && contextId) {
+          folder += `/${context}_${contextId}`;
+        }
+        try {
+          const result = await uploadFile(file, folder);
+          // If context/context_id provided, save to Media table (direct-save mode)
+          if (context && contextId) {
+            let mediaData = {
+              file_path: result.public_id,
+              file_url: result.secure_url,
+              file_type: getFileType(file.originalname),
+              side: side || null,
+              is_design: (context === "item") || (context === "order" && !side),
+              uploaded_at: new Date(),
+            };
+            if (context === "order" && contextId) mediaData.order_id = contextId;
+            if (context === "item" && contextId) {
+              mediaData.item_id = contextId;
+              if (itemOrderId) mediaData.order_id = itemOrderId;
+            }
+            const media = await Media.create(mediaData);
+            uploaded.push({
+              id: media.id,
+              filename: file.originalname,
+              url: result.secure_url,
+              public_id: result.public_id,
+              resource_type: result.resource_type,
+              context,
+              context_id: contextId,
+              side,
+            });
+          } else {
+            // URL-only mode
+            uploaded.push({
+              filename: file.originalname,
+              url: result.secure_url,
+              public_id: result.public_id,
+              resource_type: result.resource_type,
+            });
+          }
+        } catch (err) {
+          console.warn("Cloudinary upload error:", err.message);
+        }
+      }
+    } else {
+      ensureUploadDir(config.app.uploadFolder);
+      for (const file of files) {
+        console.log('Processing file:', file.originalname);
+        const isAllowed = allowedFile(file.originalname);
+        console.log('allowedFile:', isAllowed, 'for', file.originalname);
+        if (!isAllowed) continue;
+        const filename = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+        let subfolder = "";
+        if (context && contextId) {
+          subfolder = `${context}_${contextId}`;
+        }
+        const relativePath = path.join(subfolder, filename);
+        const fullPath = path.resolve(config.app.uploadFolder, relativePath);
+        ensureUploadDir(path.dirname(fullPath));
+        fs.writeFileSync(fullPath, file.buffer);
+        const fileType = getFileType(filename);
+        const fileUrl = `/uploads/${subfolder ? subfolder + '/' : ''}${filename}`;
+        if (context && contextId) {
+          // Direct-save mode
+          let mediaData = {
+            file_path: relativePath,
+            file_url: fileUrl,
+            file_type: fileType,
+            side: side || null,
+            is_design: (context === "item") || (context === "order" && !side),
+            uploaded_at: new Date(),
+          };
+          if (context === "order" && contextId) mediaData.order_id = contextId;
+          if (context === "item" && contextId) {
+            mediaData.item_id = contextId;
+            if (itemOrderId) mediaData.order_id = itemOrderId;
+          }
+          const media = await Media.create(mediaData);
+          uploaded.push({
+            id: media.id,
+            filename,
+            url: fileUrl,
+            file_type: fileType,
+            context,
+            context_id: contextId,
+            side,
+          });
+        } else {
+          // URL-only mode
+          uploaded.push({
+            filename,
+            url: fileUrl,
+            file_type: fileType,
+          });
+        }
+      }
+    }
+    res.json({ uploaded });
+  } catch (err) {
+    console.error("Generic upload error:", err);
+    res.status(500).json({ error: "Upload failed", details: err.message });
+  }
+});
 
 const ensureUploadDir = (dir) => fs.mkdirSync(dir, { recursive: true });
 const allowedFile = (filename) => {
@@ -107,6 +275,7 @@ router.post("/orders", async (req, res) => {
     }
   }
 
+
   const order = await Order.create({
     customer_name: data.customer_name,
     phone_number: data.phone_number,
@@ -122,9 +291,25 @@ router.post("/orders", async (req, res) => {
 
   const status = await OrderStatus.create({ order_id: order.id });
   const itemsData = Array.isArray(data.items) ? data.items : [];
+  // For response mapping
+  order.items = [];
+  // Save order-level media_urls if present
+  if (Array.isArray(data.media_urls)) {
+    for (const url of data.media_urls) {
+      if (typeof url === "string" && url.trim()) {
+        await Media.create({
+          order_id: order.id,
+          file_url: url,
+          file_path: url,
+          file_type: "Image",
+          uploaded_at: new Date(),
+        });
+      }
+    }
+  }
   for (const itemData of itemsData) {
     if (!itemData.size || itemData.quantity == null) continue;
-    await OrderItem.create({
+    const created = await OrderItem.create({
       order_id: order.id,
       size: itemData.size,
       quantity: parseInt(itemData.quantity, 10),
@@ -133,7 +318,73 @@ router.post("/orders", async (req, res) => {
       note: itemData.note || null,
       color: itemData.color || "white",
       design: itemData.design || "both",
+      temp_id: itemData.temp_id || null,
     });
+
+    // Debug log for incoming media_urls
+    console.log(`Saving media for item id=${created.id}, temp_id=${itemData.temp_id || ''}`);
+    console.log('Received media_urls:', JSON.stringify(itemData.media_urls));
+
+    // Validate and save item-level media_urls if present (object with front/back arrays)
+    if (itemData.media_urls && typeof itemData.media_urls === 'object' && (itemData.media_urls.front || itemData.media_urls.back)) {
+      let hasValidImage = false;
+      for (const side of ['front', 'back']) {
+        if (Array.isArray(itemData.media_urls[side])) {
+          for (const url of itemData.media_urls[side]) {
+            if (typeof url === "string" && url.trim()) {
+              hasValidImage = true;
+              await Media.create({
+                order_id: order.id,
+                item_id: created.id,
+                file_url: url,
+                file_path: url,
+                file_type: "Image",
+                side,
+                is_design: true, // Mark as design image for item
+                uploaded_at: new Date(),
+              });
+              console.log(`Saved media for item ${created.id} side=${side} url=${url}`);
+            }
+          }
+        } else if (itemData.media_urls[side]) {
+          // Log if side is missing or not an array
+          console.warn(`media_urls[${side}] is not an array:`, itemData.media_urls[side]);
+        }
+      }
+      // If both front and back are empty, warn or error (optional: enforce at least one image)
+      if (!hasValidImage) {
+        console.warn(`No valid images provided for item ${created.id}`);
+        // Optionally, return error:
+        // return res.status(400).json({ error: `No valid images provided for item at position ${itemData.position}` });
+      }
+    } else if (Array.isArray(itemData.media_urls)) {
+      // fallback: flat array, save without side
+      let hasValidImage = false;
+      for (const url of itemData.media_urls) {
+        if (typeof url === "string" && url.trim()) {
+          hasValidImage = true;
+          await Media.create({
+            order_id: order.id,
+            item_id: created.id,
+            file_url: url,
+            file_path: url,
+            file_type: "Image",
+            is_design: true,
+            uploaded_at: new Date(),
+          });
+          console.log(`Saved media for item ${created.id} (no side) url=${url}`);
+        }
+      }
+      if (!hasValidImage) {
+        console.warn(`No valid images provided for item ${created.id}`);
+        // Optionally, return error:
+        // return res.status(400).json({ error: `No valid images provided for item at position ${itemData.position}` });
+      }
+    } else if (itemData.media_urls) {
+      // Log if media_urls is present but not in expected format
+      console.warn('media_urls for item is not an object/array:', itemData.media_urls);
+    }
+    order.items.push(created);
   }
 
   await logActivity(
@@ -230,7 +481,12 @@ router.post("/orders", async (req, res) => {
   const resultOrder = await Order.findByPk(order.id, {
     include: [
       { model: OrderStatus, as: "status" },
-      { model: OrderItem, as: "items" },
+      { model: Media, as: "media" },
+      {
+        model: OrderItem,
+        as: "items",
+        include: [{ model: Media, as: "media" }],
+      },
     ],
   });
 
@@ -312,69 +568,177 @@ router.get("/orders/:orderId", async (req, res) => {
 //   res.json(updated.toJson({ with_status: true }));
 // });
 
-router.put('/orders/:orderId', async (req, res) => {
+router.put("/orders/:orderId", async (req, res) => {
   try {
     const { orderId } = req.params;
+    const order = await Order.findByPk(orderId, { include: [{ model: OrderItem, as: "items" }] });
+    if (Array.isArray(req.body.items)) {
+      const incomingItems = req.body.items;
+      const existingItems = order.items || [];
+      const existingById = {};
+      existingItems.forEach((item) => {
+        existingById[item.id] = item;
+      });
 
-    // 1. Locate the record
-    const order = await Order.findByPk(orderId);
+      // Track which items to keep
+      const incomingIds = new Set();
+      // For response mapping
+      const newItemsWithTempId = [];
 
-    // 2. Handle missing record
-    if (!order) {
-      return res.status(404).json({ error: `Order with ID ${orderId} not found.` });
+      // Update or create items
+      for (const itemData of incomingItems) {
+        if (itemData.id && existingById[itemData.id]) {
+          // Update existing item
+          const item = existingById[itemData.id];
+          if (itemData.size !== undefined) item.size = itemData.size;
+          if (itemData.quantity !== undefined) item.quantity = itemData.quantity;
+          if (itemData.position !== undefined) item.position = itemData.position;
+          if (itemData.note !== undefined) item.note = itemData.note;
+          if (itemData.color !== undefined) item.color = itemData.color;
+          if (itemData.design !== undefined) item.design = itemData.design;
+          // If temp_id is present and not set, update it (for legacy items)
+          if (itemData.temp_id && !item.temp_id) item.temp_id = itemData.temp_id;
+          await item.save();
+          // Synchronize item-level media_urls for front/back: remove missing, add new
+          if (itemData.media_urls && typeof itemData.media_urls === 'object' && (itemData.media_urls.front || itemData.media_urls.back)) {
+            for (const side of ['front', 'back']) {
+              const newUrls = Array.isArray(itemData.media_urls[side]) ? itemData.media_urls[side].filter(url => typeof url === 'string' && url.trim()) : [];
+              // Remove Media records for this item/side not in newUrls
+              await Media.destroy({ where: { order_id: order.id, item_id: item.id, side, ...(newUrls.length ? { file_url: { [Op.notIn]: newUrls } } : {}) } });
+              // Add new Media records for newUrls not already present
+              for (const url of newUrls) {
+                const exists = await Media.findOne({ where: { order_id: order.id, item_id: item.id, file_url: url, side } });
+                if (!exists) {
+                  await Media.create({
+                    order_id: order.id,
+                    item_id: item.id,
+                    file_url: url,
+                    file_path: url,
+                    file_type: "Image",
+                    side,
+                    is_design: true,
+                    uploaded_at: new Date(),
+                  });
+                }
+              }
+            }
+          } else if (Array.isArray(itemData.media_urls)) {
+            const newUrls = itemData.media_urls.filter(url => typeof url === 'string' && url.trim());
+            await Media.destroy({ where: { order_id: order.id, item_id: item.id, ...(newUrls.length ? { file_url: { [Op.notIn]: newUrls } } : {}) } });
+            for (const url of newUrls) {
+              const exists = await Media.findOne({ where: { order_id: order.id, item_id: item.id, file_url: url } });
+              if (!exists) {
+                await Media.create({
+                  order_id: order.id,
+                  item_id: item.id,
+                  file_url: url,
+                  file_path: url,
+                  file_type: "Image",
+                  is_design: true,
+                  uploaded_at: new Date(),
+                });
+              }
+            }
+          }
+          incomingIds.add(item.id);
+        } else {
+          // Create new item, persist temp_id if present
+          const newItem = await OrderItem.create({
+            order_id: order.id,
+            size: itemData.size,
+            quantity: itemData.quantity,
+            position: itemData.position,
+            note: itemData.note || null,
+            color: itemData.color || "white",
+            design: itemData.design || "both",
+            temp_id: itemData.temp_id || null,
+          });
+          // Save item-level media_urls if present
+          if (itemData.media_urls && typeof itemData.media_urls === 'object' && (itemData.media_urls.front || itemData.media_urls.back)) {
+            for (const side of ['front', 'back']) {
+              if (Array.isArray(itemData.media_urls[side])) {
+                for (const url of itemData.media_urls[side]) {
+                  if (typeof url === "string" && url.trim()) {
+                    await Media.create({
+                      order_id: order.id,
+                      item_id: newItem.id,
+                      file_url: url,
+                      file_path: url,
+                      file_type: "Image",
+                      side,
+                      is_design: true,
+                      uploaded_at: new Date(),
+                    });
+                  }
+                }
+              }
+            }
+          } else if (Array.isArray(itemData.media_urls)) {
+            for (const url of itemData.media_urls) {
+              if (typeof url === "string" && url.trim()) {
+                await Media.create({
+                  order_id: order.id,
+                  item_id: newItem.id,
+                  file_url: url,
+                  file_path: url,
+                  file_type: "Image",
+                  is_design: true,
+                  uploaded_at: new Date(),
+                });
+              }
+            }
+          }
+          newItemsWithTempId.push(newItem);
+          incomingIds.add(newItem.id);
+        }
+      }
+      // Delete items that are not in the incoming list
+      for (const item of existingItems) {
+        if (!incomingIds.has(item.id)) {
+          await item.destroy();
+        }
+      }
+
+      // Attach new items with temp_id to order.items for response
+      order.items = existingItems.filter((item) => incomingIds.has(item.id)).concat(newItemsWithTempId);
     }
 
-    // 3. Define allowed fields for update
-    const fields = [
-      'customer_name', 
-      'phone_number', 
-      'division', 
-      'district', 
-      'upazila_zone', 
-      'address', 
-      'description', 
-      'price', 
-      'payment_type', 
-      'courier_parcel_id'
-    ];
+    await logActivity(order.id, "Order Updated", "Order details and items modified");
 
-    // 4. Update fields with sanitation
-    fields.forEach((field) => {
-      if (req.body[field] !== undefined) {
-        let value = req.body[field];
-
-        // Sanitize 'price' to prevent [WARN_DATA_TRUNCATED]
-        if (field === 'price') {
-          // Converts empty strings or invalid inputs to 0.00
-          value = (value === '' || value === null || isNaN(value)) ? 0 : value;
+    // Synchronize order-level media (attachments) if provided as media_urls array
+    if (Array.isArray(req.body.media_urls)) {
+      const newUrls = req.body.media_urls.filter(u => typeof u === 'string' && u.trim());
+      // Remove order-level Media rows (item_id IS NULL) whose file_url is not in newUrls
+      await Media.destroy({ where: { order_id: order.id, item_id: null, ...(newUrls.length ? { file_url: { [Op.notIn]: newUrls } } : {}) } });
+      // Add any new urls not already present
+      for (const url of newUrls) {
+        const exists = await Media.findOne({ where: { order_id: order.id, item_id: null, file_url: url } });
+        if (!exists) {
+          await Media.create({
+            order_id: order.id,
+            file_url: url,
+            file_path: url,
+            file_type: 'Image',
+            is_design: true,
+            uploaded_at: new Date(),
+          });
         }
-
-        order[field] = value;
       }
+    }
+
+    // Return updated order with status and items
+    const resultOrder = await Order.findByPk(order.id, {
+      include: [
+        { model: OrderStatus, as: "status" },
+        { model: OrderItem, as: "items" },
+      ],
     });
-
-    // 5. Persist changes to MySQL
-    await order.save();
-
-    // 6. Log the activity
-    await logActivity(order.id, 'Order Updated', 'Order details modified');
-
-    // 7. Fetch fresh record with associations for the response
-    const updated = await Order.findByPk(order.id, { 
-      include: [{ model: OrderStatus, as: 'status' }] 
-    });
-
-    // 8. Return response
-    return res.json(updated.toJson({ with_status: true }));
-
+    return res.json(resultOrder.toJson({ with_status: true, with_items: true }));
   } catch (error) {
-    // Log the actual error for debugging
-    console.error('Update Error:', error);
-
-    // Prevent the app from crashing by sending an error response instead
-    return res.status(500).json({ 
-      error: 'Failed to update order', 
-      details: error.message 
+    console.error("Update Error:", error);
+    return res.status(500).json({
+      error: "Failed to update order",
+      details: error.message,
     });
   }
 });

@@ -100,7 +100,11 @@ module.exports = (sequelize) => {
     }
 
     if (with_items) {
-      data.items = (this.items || []).map((item) => item.toJson({ with_media: true }));
+      data.items = (this.items || []).map((item) => {
+        const itemJson = item.toJson({ with_media: true });
+        if (item.temp_id) itemJson.temp_id = item.temp_id;
+        return itemJson;
+      });
     }
 
     return data;

@@ -1,7 +1,28 @@
+// Generic Upload API
+export const uploadApi = {
+  /**
+   * Upload files to /api/uploads
+   * @param {File[]} files - Array of files to upload
+   * @param {Object} options - { context, context_id, side } (all optional)
+   * @returns {Promise}
+   */
+  upload: (files, options = {}) => {
+    const formData = new FormData();
+    (Array.isArray(files) ? files : [files]).forEach((file) => {
+      formData.append('files', file);
+    });
+    if (options.context) formData.append('context', options.context);
+    if (options.context_id) formData.append('context_id', options.context_id);
+    if (options.side) formData.append('side', options.side);
+    return api.post('/uploads', formData, {
+      headers: { 'Content-Type': undefined },
+    });
+  },
+};
 import axios from 'axios'
 
-// const API_BASE = 'http://localhost:8090/api'
-const API_BASE = 'https://ordertrackerbackend.bizscal.com/api'
+const API_BASE = 'http://localhost:8090/api'
+// const API_BASE = 'https://ordertrackerbackend.bizscal.com/api'
 
 const api = axios.create({
   baseURL: API_BASE,

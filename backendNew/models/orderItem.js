@@ -2,6 +2,12 @@ const { DataTypes } = require('sequelize');
 
 module.exports = (sequelize) => {
   const OrderItem = sequelize.define('OrderItem', {
+    temp_id: {
+      type: DataTypes.STRING(40),
+      allowNull: true,
+      unique: false,
+      comment: 'Temporary ID for frontend mapping of new items',
+    },
     order_id: {
       type: DataTypes.INTEGER,
       allowNull: false
@@ -53,6 +59,7 @@ module.exports = (sequelize) => {
       created_at: this.created_at ? this.created_at.toISOString() : null,
       updated_at: this.updated_at ? this.updated_at.toISOString() : null
     };
+    if (this.temp_id) data.temp_id = this.temp_id;
 
     if (with_media) {
       data.front_images = (this.media || []).filter((m) => m.side === 'front').map((m) => ({
