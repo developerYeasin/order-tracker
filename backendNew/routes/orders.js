@@ -422,7 +422,7 @@ router.post("/orders", async (req, res) => {
       if (itemDescription) noteParts.push(itemDescription);
       const combinedNote = noteParts.length ? noteParts.join(" | ") : null;
       const recipientAddress = order.address
-        ? `${order.address}${order.upazila_zone ? `, ${order.upazila_zone}` : ""}${order.district ? `, ${order.district}` : ""}`
+        ? `${order.address}, ${order.upazila_zone ? `, ${order.upazila_zone}` : ""}${order.district ? `, ${order.district}` : ""}`
         : `${order.upazila_zone}, ${order.district}`;
 
       try {
